@@ -86,7 +86,13 @@ def generate_batch(
     y_soma_batch = torch.zeros((batch_size, input_window_size, neuronio_label_dim // 2))
 
     # Gather batch data
+    search_time = 100
+    starting_threshold = -0.1
     for k, (sim_ind, time_ind) in enumerate(zip(selected_sim_inds, selected_time_inds)):
+        #if y_soma[sim_ind, time_ind, 0] > starting_threshold:
+        search_space = y_soma[sim_ind, time_ind-search_time : time_ind, :]#.clone()
+        #time_ind -= (search_time - torch.argwhere(search_space < starting_threshold)[-1].item())
+        time_ind -= (search_time - torch.argmin(search_space).item())
         X_batch[k] = X[sim_ind, time_ind : time_ind + input_window_size, :]
         y_spike_batch[k] = y_spike[sim_ind, time_ind : time_ind + input_window_size, :]
         y_soma_batch[k] = y_soma[sim_ind, time_ind : time_ind + input_window_size, :]
@@ -97,7 +103,7 @@ def generate_batch(
     y_soma_batch = y_soma_batch.squeeze(-1)
 
     # Return the batch
-    return X_batch, (y_spike_batch, y_soma_batch)
+    return X_batch, (y_spike_batch, y_soma_batch, search_space)
 
 
 # NOTE: ordering of arguments should not be changed
@@ -125,7 +131,6 @@ def worker_fn(
 
     # sleep so not all start loading at same time
     time.sleep(seed * 3)
-
     # create synapse types as necessary
     if synapse_types is None:
         synapse_types = torch.tensor(create_neuronio_input_type())
@@ -265,7 +270,7 @@ class NeuronIO(IterableDataset):
     def prefetch_next_batch(self, return_batch=False):
         # retrieve batch from queue
         batch = self.batch_queue.get(block=True, timeout=None)
-        X_batch, (y_spike_batch, y_soma_batch) = batch
+        X_batch, (y_spike_batch, y_soma_batch, a) = batch
 
         # put on appropriate device
         X_batch = X_batch.to(self.device, non_blocking=True)
@@ -273,7 +278,7 @@ class NeuronIO(IterableDataset):
         y_soma_batch = y_soma_batch.to(self.device, non_blocking=True)
 
         # put in local buffer
-        batch = X_batch, (y_spike_batch, y_soma_batch)
+        batch = X_batch, (y_spike_batch, y_soma_batch, a)
         self.local_batch_buffer.append(batch)
 
         if return_batch:
