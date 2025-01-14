@@ -58,6 +58,10 @@ def generate_batch(
     batch_size: int,
     input_window_size: int,
     ignore_time_from_start: int,
+    rest_start: bool = False,
+    starting_choice= None,
+    sec_len: int = 200,
+    ignore_points = None,
     neuronio_sim_per_file: int = NEURONIO_SIM_PER_FILE,
     neuronio_sim_len: int = NEURONIO_SIM_LEN,
     neuronio_label_dim: int = NEURONIO_LABEL_DIM,
@@ -68,15 +72,29 @@ def generate_batch(
         neuronio_sim_per_file, size=batch_size, replace=False
     )
 
-    # randomly sample timepoints for current batch
-    selected_time_inds = (
-        generate_batch_rng.choice(
-            neuronio_sim_len - input_window_size - ignore_time_from_start,
-            size=batch_size,
-            replace=True,
+    if rest_start:
+        ignore_start, ignore_end = ignore_points
+        selected_inds = (
+            generate_batch_rng.choice(
+                starting_choice.shape[1]-ignore_start-ignore_end,
+                size=batch_size,
+                replace=True,
+                )
+            + ignore_start
         )
-        + ignore_time_from_start
-    )
+        selected_time_inds = np.array(
+             [starting_choice[sim, time] for (sim, time) in zip(selected_sim_inds, selected_inds)])
+        
+    else: # randomly sample timepoints for current batch
+        selected_time_inds = (
+            generate_batch_rng.choice(
+                neuronio_sim_len - input_window_size - ignore_time_from_start,
+                size=batch_size,
+                replace=True,
+            )
+            + ignore_time_from_start
+        )
+
 
     # Initialize batch tensors
     X_batch = torch.zeros((batch_size, input_window_size, neuronio_data_dim))
@@ -87,6 +105,8 @@ def generate_batch(
 
     # Gather batch data
     for k, (sim_ind, time_ind) in enumerate(zip(selected_sim_inds, selected_time_inds)):
+        #search_space = y_soma[sim_ind, time_ind-search_time : time_ind, :] 150
+        #time_ind -= (search_time - torch.argmin(search_space).item())
         X_batch[k] = X[sim_ind, time_ind : time_ind + input_window_size, :]
         y_spike_batch[k] = y_spike[sim_ind, time_ind : time_ind + input_window_size, :]
         y_soma_batch[k] = y_soma[sim_ind, time_ind : time_ind + input_window_size, :]
@@ -97,7 +117,7 @@ def generate_batch(
     y_soma_batch = y_soma_batch.squeeze(-1)
 
     # Return the batch
-    return X_batch, (y_spike_batch, y_soma_batch)
+    return X_batch, (y_spike_batch, y_soma_batch, None)
 
 
 # NOTE: ordering of arguments should not be changed
@@ -110,6 +130,10 @@ def worker_fn(
     batch_size: int,
     input_window_size: int,
     ignore_time_from_start: int,
+    rest_start: bool = False,
+    sec_len: int = 200,
+    start_point_persec: int = 20,
+    save_path = None,
     y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
     y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
     y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
@@ -137,6 +161,13 @@ def worker_fn(
     )
     batches_per_file = int(file_load_fraction * max_batches_per_file)
 
+    ignore_points=None
+    starting_choice=None
+    if rest_start:
+        ignore_start = -(ignore_time_from_start//-sec_len) * start_point_persec
+        ignore_end = -(input_window_size//-sec_len) * start_point_persec
+        ignore_points = (ignore_start, ignore_end)
+
     # Loop until there are no more file paths or an exit condition is triggered
     while True:
         # Randomly select a file path
@@ -159,6 +190,9 @@ def worker_fn(
             y_train_soma_scale=y_train_soma_scale,
         )
 
+        if rest_start:
+            starting_choice = np.load(save_path+file_path[-92:-2]+'.npy')
+
         # Generate and enqueue batches
         batch_count = 0
         while batch_count < batches_per_file:
@@ -172,6 +206,10 @@ def worker_fn(
                 batch_size=batch_size,
                 input_window_size=input_window_size,
                 ignore_time_from_start=ignore_time_from_start,
+                rest_start=rest_start,
+                starting_choice=starting_choice,
+                sec_len=sec_len,
+                ignore_points=ignore_points,
                 neuronio_sim_per_file=neuronio_sim_per_file,
                 neuronio_sim_len=neuronio_sim_len,
                 neuronio_label_dim=neuronio_label_dim,
@@ -195,6 +233,10 @@ class NeuronIO(IterableDataset):
         ignore_time_from_start: int = 500,
         num_workers: int = 5,
         num_prefetch_batch: int = 50,
+        rest_start: bool = False,
+        sec_len: int = 200,
+        start_point_persec: int = 20,
+        save_path = None,
         y_soma_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
         y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
         y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
@@ -226,6 +268,11 @@ class NeuronIO(IterableDataset):
         self.seed = seed
         self.verbose = verbose
         self.device = device
+        self.rest_start = rest_start
+        self.sec_len = sec_len
+        self.save_path = save_path
+        self.start_point_persec = start_point_persec
+        
 
         self.batch_queue = mp.Queue(maxsize=self.num_prefetch_batch)
         self.workers = []
@@ -243,6 +290,10 @@ class NeuronIO(IterableDataset):
                     self.batch_size,
                     self.input_window_size,
                     self.ignore_time_from_start,
+                    self.rest_start,
+                    self.sec_len,
+                    self.start_point_persec,
+                    self.save_path,
                     self.y_soma_threshold,
                     self.y_train_soma_bias,
                     self.y_train_soma_scale,
@@ -264,7 +315,7 @@ class NeuronIO(IterableDataset):
     def prefetch_next_batch(self, return_batch=False):
         # retrieve batch from queue
         batch = self.batch_queue.get(block=True, timeout=None)
-        X_batch, (y_spike_batch, y_soma_batch) = batch
+        X_batch, (y_spike_batch, y_soma_batch, a) = batch
 
         # put on appropriate device
         X_batch = X_batch.to(self.device, non_blocking=True)
@@ -272,7 +323,7 @@ class NeuronIO(IterableDataset):
         y_soma_batch = y_soma_batch.to(self.device, non_blocking=True)
 
         # put in local buffer
-        batch = X_batch, (y_spike_batch, y_soma_batch)
+        batch = X_batch, (y_spike_batch, y_soma_batch, a)
         self.local_batch_buffer.append(batch)
 
         if return_batch:

@@ -88,13 +88,11 @@ class ELMf(jit.ScriptModule):
             mlp_num_layers,
             mlp_activation,
         )
-        self.mlpf = MLP(
-            self.num_mlp_input,
-            self.mlp_hidden_size,
-            num_memory,
-            0,
-            mlp_activation,
+        self.mlpf = nn.Sequential(
+            nn.Linear(self.num_mlp_input,num_memory),
+            nn.Sigmoid()
         )
+        
         self._proto_w_s = nn.parameter.Parameter(
             torch.full((self.num_synapse,), w_s_value)
         )
