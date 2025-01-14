@@ -98,6 +98,8 @@ class ELMf(jit.ScriptModule):
         )
         self.w_y = nn.Linear(num_memory, num_output)
 
+        nn.init.constant_(self.mlpf[0].bias, 1.0)
+
         # initialization of branch time constants and decay factors
         tau_b = torch.full((self.num_branch,), tau_b_value)
         self.tau_b = nn.parameter.Parameter(tau_b, requires_grad=False)
@@ -122,7 +124,7 @@ class ELMf(jit.ScriptModule):
         )
         self.valid_indices_mask = nn.parameter.Parameter(
             routing_artifacts[1], requires_grad=False
-        )
+        )       
 
     @property
     def tau_m(self):
