@@ -237,6 +237,16 @@ if __name__ == "__main__":
         device=torch_device,
     )
 
+    # Visualize training data
+    X_viz, (y_spike_viz, y_soma_viz) = next(iter(train_data_loader))
+    visualize_training_batch(
+        X_viz,
+        y_spike_viz,
+        y_soma_viz,
+        num_viz=8,
+        save_fig_path=str(artefacts_dir / "training_batch.png"),
+    )
+
 
     # Initialize the ELM model
     if train_config['forget_gate']:
@@ -310,6 +320,11 @@ if __name__ == "__main__":
         if valid_rmse < best_valid_rmse:
             best_valid_rmse = valid_rmse
             best_model_state_dict = model.state_dict().copy()
+
+            # save model for later
+            torch.save(
+                best_model_state_dict, str("../models/new_exp/neuronio_best_model_forget_%r_rest_%r_nummem_%d.pt"%(args.forget_gate, args.rest_start, args.num_memory))
+            )
 
         # Print statistics
         print(
@@ -416,11 +431,6 @@ if __name__ == "__main__":
     with open(str(artefacts_dir / "model_stats.json"), "w", encoding="utf-8") as f:
         json.dump(model_stats, f, ensure_ascii=False, indent=4, sort_keys=True)
     wandb.log({"model_stats": model_stats})
-
-    # save model for later
-    torch.save(
-        best_model_state_dict, str(artefacts_dir / "neuronio_best_model_state.pt")
-    )
 
     # TODO: copy artefacts_dir for local version
 
