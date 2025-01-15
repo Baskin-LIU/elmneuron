@@ -117,7 +117,7 @@ def generate_batch(
     y_soma_batch = y_soma_batch.squeeze(-1)
 
     # Return the batch
-    return X_batch, (y_spike_batch, y_soma_batch, None)
+    return X_batch, (y_spike_batch, y_soma_batch)
 
 
 # NOTE: ordering of arguments should not be changed
@@ -315,7 +315,7 @@ class NeuronIO(IterableDataset):
     def prefetch_next_batch(self, return_batch=False):
         # retrieve batch from queue
         batch = self.batch_queue.get(block=True, timeout=None)
-        X_batch, (y_spike_batch, y_soma_batch, a) = batch
+        X_batch, (y_spike_batch, y_soma_batch) = batch
 
         # put on appropriate device
         X_batch = X_batch.to(self.device, non_blocking=True)
@@ -323,7 +323,7 @@ class NeuronIO(IterableDataset):
         y_soma_batch = y_soma_batch.to(self.device, non_blocking=True)
 
         # put in local buffer
-        batch = X_batch, (y_spike_batch, y_soma_batch, a)
+        batch = X_batch, (y_spike_batch, y_soma_batch)
         self.local_batch_buffer.append(batch)
 
         if return_batch:
