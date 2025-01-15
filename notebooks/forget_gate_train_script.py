@@ -48,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("--burn_in_time", type=int, default=150)
     
     parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--num_prefetch_batch", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
@@ -169,7 +170,7 @@ if __name__ == "__main__":
     train_config["batches_per_epoch"] = 1000 if general_config["short_training_run"] else 10000
     train_config["batches_per_epoch"] = int(8/train_config["batch_size"] * train_config["batches_per_epoch"])
     train_config["file_load_fraction"] = 0.5 if general_config["short_training_run"] else 0.3
-    train_config["num_prefetch_batch"] = 2 if args.machine=="PC" else 40
+    train_config["num_prefetch_batch"] = 2 if args.machine=="PC" else args.num_prefetch_batch
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
     train_config["burn_in_time"] = args.burn_in_time
     train_config["input_window_size"] = 500

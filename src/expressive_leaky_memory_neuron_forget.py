@@ -191,7 +191,7 @@ class ELMf(jit.ScriptModule):
         b_inp = (w_s * x).view(batch_size, self.num_branch, -1).sum(dim=-1)
         b_t = kappa_b * b_prev + b_inp
         delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
-        gamma_m_t = torch.sigmoid(self.mlpf(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
+        gamma_m_t = self.mlpf(torch.cat([b_t, kappa_m * m_prev], dim=-1))
         m_t = kappa_m * m_prev * gamma_m_t + (1 - kappa_lambda) * delta_m_t
         y_t = self.w_y(m_t)
         return y_t, b_t, m_t
