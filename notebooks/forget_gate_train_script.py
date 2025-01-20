@@ -45,6 +45,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
+    parser.add_argument("--mlp_num_layers", type=int, default=1)
     parser.add_argument("--burn_in_time", type=int, default=150)
     
     parser.add_argument("--num_workers", type=int, default=4)
@@ -120,7 +121,7 @@ if __name__ == "__main__":
         train_data_dir_path = data_dir_path / "train"  
         test_data_dir_path = data_dir_path / "test/Data_test"  
     else:
-        assert('Unknown location')
+        print("Unknown location")
 
     # Data Config
 
@@ -151,7 +152,8 @@ if __name__ == "__main__":
     model_config = dict()
     model_config["num_input"] = data_config["data_dim"]
     model_config["num_output"] = data_config["label_dim"]
-    model_config["num_memory"] = args.num_memory  
+    model_config["num_memory"] = args.num_memory
+    model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
     model_config["memory_tau_max"] = 150.0
