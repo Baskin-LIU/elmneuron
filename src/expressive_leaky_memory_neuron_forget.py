@@ -98,7 +98,9 @@ class ELMf(jit.ScriptModule):
         )
         self.w_y = nn.Linear(num_memory, num_output)
 
-        nn.init.constant_(self.mlpf[0].bias, 1.0)
+        #nn.init.constant_(self.mlpf[0].bias, 1.0)
+        #chrono init
+        self.mlpf[0].bias =  torch.nn.Parameter(torch.log(nn.init.uniform_(self.mlpf[0].bias, 1, 1000 - 1)))
 
         # initialization of branch time constants and decay factors
         tau_b = torch.full((self.num_branch,), tau_b_value)

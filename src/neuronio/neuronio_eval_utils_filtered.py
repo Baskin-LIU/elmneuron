@@ -178,62 +178,62 @@ def extract_core_results(
     evaluations_results_dict = {}
 
     #test different burn-in-times 
-    if burn_in_times is not None:
-        #initialize and store them in a list
-        for desired_FP in desired_FP_list:
-            TP_key_string = "TP @ %.4f FP" % (desired_FP)
-            evaluations_results_dict[TP_key_string]=[]
-            AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
-            evaluations_results_dict[AUC_key_string]=[]
-        evaluations_results_dict["AUC"]=[]
-        evaluations_results_dict["soma_explained_variance_percent"]=[]
-        evaluations_results_dict["soma_RMSE"]=[]
-        evaluations_results_dict["soma_MAE"]=[]
+    # if burn_in_times is not None:
+    #     #initialize and store them in a list
+    #     for desired_FP in desired_FP_list:
+    #         TP_key_string = "TP @ %.4f FP" % (desired_FP)
+    #         evaluations_results_dict[TP_key_string]=[]
+    #         AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
+    #         evaluations_results_dict[AUC_key_string]=[]
+    #     evaluations_results_dict["AUC"]=[]
+    #     evaluations_results_dict["soma_explained_variance_percent"]=[]
+    #     evaluations_results_dict["soma_RMSE"]=[]
+    #     evaluations_results_dict["soma_MAE"]=[]
 
-        #calculating based on different burn_in_time
-        for burn_in_time in burn_in_times:
-            y_spikes_GT_ = y_spikes_GT[:, burn_in_time:, :]
-            y_spikes_hat_ = y_spikes_hat[:, burn_in_time:, :]
-            y_soma_GT_ = y_soma_GT[:, burn_in_time:, :]
-            y_soma_hat_ = y_soma_hat[:, burn_in_time:, :]
-            for desired_FP in desired_FP_list:
-                TP_at_desired_FP = calc_TP_at_desired_FP(
-                    y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
-                )
-                AUC_at_desired_FP = calc_AUC_at_desired_FP(
-                    y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
-                )
-                TP_key_string = "TP @ %.4f FP" % (desired_FP)
-                evaluations_results_dict[TP_key_string].append(TP_at_desired_FP)
+    #     #calculating based on different burn_in_time
+    #     for burn_in_time in burn_in_times:
+    #         y_spikes_GT_ = y_spikes_GT[:, burn_in_time:, :]
+    #         y_spikes_hat_ = y_spikes_hat[:, burn_in_time:, :]
+    #         y_soma_GT_ = y_soma_GT[:, burn_in_time:, :]
+    #         y_soma_hat_ = y_soma_hat[:, burn_in_time:, :]
+    #         for desired_FP in desired_FP_list:
+    #             TP_at_desired_FP = calc_TP_at_desired_FP(
+    #                 y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
+    #             )
+    #             AUC_at_desired_FP = calc_AUC_at_desired_FP(
+    #                 y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
+    #             )
+    #             TP_key_string = "TP @ %.4f FP" % (desired_FP)
+    #             evaluations_results_dict[TP_key_string].append(TP_at_desired_FP)
         
-                AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
-                evaluations_results_dict[AUC_key_string].append(AUC_at_desired_FP)
+    #             AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
+    #             evaluations_results_dict[AUC_key_string].append(AUC_at_desired_FP)
 
-            fpr, tpr, thresholds = roc_curve(y_spikes_GT_.ravel(), y_spikes_hat_.ravel())
-            AUC_score = auc(fpr, tpr)
+    #         fpr, tpr, thresholds = roc_curve(y_spikes_GT_.ravel(), y_spikes_hat_.ravel())
+    #         AUC_score = auc(fpr, tpr)
         
-            soma_explained_variance_percent = 100.0 * explained_variance_score(
-                y_soma_GT_.ravel(), y_soma_hat_.ravel()
-            )
-            soma_RMSE = np.sqrt(MSE(y_soma_GT_.ravel(), y_soma_hat_.ravel()))
-            soma_MAE = MAE(y_soma_GT_.ravel(), y_soma_hat_.ravel())
+    #         soma_explained_variance_percent = 100.0 * explained_variance_score(
+    #             y_soma_GT_.ravel(), y_soma_hat_.ravel()
+    #         )
+    #         soma_RMSE = np.sqrt(MSE(y_soma_GT_.ravel(), y_soma_hat_.ravel()))
+    #         soma_MAE = MAE(y_soma_GT_.ravel(), y_soma_hat_.ravel())
         
-            evaluations_results_dict["AUC"].append(AUC_score)
-            evaluations_results_dict["soma_explained_variance_percent"].append(soma_explained_variance_percent)
-            evaluations_results_dict["soma_RMSE"].append(soma_RMSE)
-            evaluations_results_dict["soma_MAE"].append(soma_MAE)
+    #         evaluations_results_dict["AUC"].append(AUC_score)
+    #         evaluations_results_dict["soma_explained_variance_percent"].append(soma_explained_variance_percent)
+    #         evaluations_results_dict["soma_RMSE"].append(soma_RMSE)
+    #         evaluations_results_dict["soma_MAE"].append(soma_MAE)
         
-        evaluation_duration_min = (time.time() - evaluation_start_time) / 60            
-        if verbose:
-            print(
-                "finished evaluation. time took to evaluate results is %.2f minutes"
-                % (evaluation_duration_min)
-            )
-            print(
-                "----------------------------------------------------------------------------------------"
-            )
+    #     evaluation_duration_min = (time.time() - evaluation_start_time) / 60            
+    #     if verbose:
+    #         print(
+    #             "finished evaluation. time took to evaluate results is %.2f minutes"
+    #             % (evaluation_duration_min)
+    #         )
+    #         print(
+    #             "----------------------------------------------------------------------------------------"
+    #         )
     
-        return evaluations_results_dict
+    #     return evaluations_results_dict
         
     for desired_FP in desired_FP_list:
         TP_at_desired_FP = calc_TP_at_desired_FP(
