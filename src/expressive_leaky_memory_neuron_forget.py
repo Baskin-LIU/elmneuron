@@ -193,7 +193,7 @@ class ELMf(jit.ScriptModule):
         delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
         gamma_m_t = self.mlpf(torch.cat([b_t, kappa_m * m_prev], dim=-1))
         #m_t = kappa_m * m_prev * gamma_m_t + (1 - kappa_lambda) * delta_m_t
-        m_t = m_prev * gamma_m_t + self.lambda_value * (1 - gamma_m_t) * delta_m_t
+        m_t = m_prev * gamma_m_t +  (1 - gamma_m_t) * delta_m_t #* self.lambda_value
         y_t = self.w_y(m_t)
         return y_t, b_t, m_t
 

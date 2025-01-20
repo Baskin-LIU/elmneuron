@@ -133,3 +133,4 @@ dmypy.json
 tmp
 wandb
 shd_data
+models/new_exp/
