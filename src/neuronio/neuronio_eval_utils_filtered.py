@@ -55,7 +55,11 @@ class NeuronioEvaluator:
         self.X_test = X_test
         self.y_spike_test = y_spike_test
         self.y_soma_test = y_soma_test
-        self.starting_choice = np.load(START_SAVE_PATH+test_file[-92:-2]+'.npy') if self.rest_start else None
+        self.recover_points = None
+        if rest_start:
+            with open(START_SAVE_PATH + test_file[-92:-2]+'_recover.pkl', 'rb') as fp:
+                recover_points = pickle.load(fp)
+            self.recover_points = recover_points[burn_in_time]
 
     def evaluate(self, neuron):
         test_predictions = compute_test_predictions(
@@ -66,7 +70,7 @@ class NeuronioEvaluator:
             burn_in_time=self.burn_in_time,
             input_window_size=self.input_window_size,
             rest_start = self.rest_start,
-            starting_choice= self.starting_choice,
+            recover_points=self.recover_points,
             device=self.device,
         )
         core_results = filter_and_extract_core_results(
