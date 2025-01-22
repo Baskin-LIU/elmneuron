@@ -1,6 +1,6 @@
 import time
 from typing import List, Union
-
+import pickle
 import numpy as np
 import torch
 from sklearn.metrics import auc, explained_variance_score
@@ -98,7 +98,12 @@ def compute_test_predictions_multiple_sim_files(
         X_test, y_spike_test, y_soma_test = parse_sim_experiment_file(
             test_file, verbose=verbose, encoding=encoding
         )
-        starting_choice = np.load(START_SAVE_PATH+test_file[-92:-2]+'.npy') if rest_start else None
+
+        recover_points = None
+        if rest_start:
+            with open(START_SAVE_PATH + test_file[-92:-2]+'_recover.pkl', 'rb') as fp:
+                recover_points = pickle.load(fp)
+            recover_points = recover_points[burn_in_time]
 
         y_spikes_GT, y_spikes_hat, y_soma_GT, y_soma_hat = compute_test_predictions(
             neuron=neuron,
@@ -108,7 +113,7 @@ def compute_test_predictions_multiple_sim_files(
             burn_in_time=burn_in_time,
             input_window_size=input_window_size,
             rest_start=rest_start,
-            starting_choice=starting_choice,
+            recover_points=recover_points,
             device=device,
         )
         y_spikes_GT_all.append(y_spikes_GT)
@@ -175,66 +180,7 @@ def extract_core_results(
     evaluation_start_time = time.time()
 
     # store results in the hyper param dict and return it
-    evaluations_results_dict = {}
-
-    #test different burn-in-times 
-    # if burn_in_times is not None:
-    #     #initialize and store them in a list
-    #     for desired_FP in desired_FP_list:
-    #         TP_key_string = "TP @ %.4f FP" % (desired_FP)
-    #         evaluations_results_dict[TP_key_string]=[]
-    #         AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
-    #         evaluations_results_dict[AUC_key_string]=[]
-    #     evaluations_results_dict["AUC"]=[]
-    #     evaluations_results_dict["soma_explained_variance_percent"]=[]
-    #     evaluations_results_dict["soma_RMSE"]=[]
-    #     evaluations_results_dict["soma_MAE"]=[]
-
-    #     #calculating based on different burn_in_time
-    #     for burn_in_time in burn_in_times:
-    #         y_spikes_GT_ = y_spikes_GT[:, burn_in_time:, :]
-    #         y_spikes_hat_ = y_spikes_hat[:, burn_in_time:, :]
-    #         y_soma_GT_ = y_soma_GT[:, burn_in_time:, :]
-    #         y_soma_hat_ = y_soma_hat[:, burn_in_time:, :]
-    #         for desired_FP in desired_FP_list:
-    #             TP_at_desired_FP = calc_TP_at_desired_FP(
-    #                 y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
-    #             )
-    #             AUC_at_desired_FP = calc_AUC_at_desired_FP(
-    #                 y_spikes_GT_, y_spikes_hat_, desired_false_positive_rate=desired_FP
-    #             )
-    #             TP_key_string = "TP @ %.4f FP" % (desired_FP)
-    #             evaluations_results_dict[TP_key_string].append(TP_at_desired_FP)
-        
-    #             AUC_key_string = "AUC @ %.4f FP" % (desired_FP)
-    #             evaluations_results_dict[AUC_key_string].append(AUC_at_desired_FP)
-
-    #         fpr, tpr, thresholds = roc_curve(y_spikes_GT_.ravel(), y_spikes_hat_.ravel())
-    #         AUC_score = auc(fpr, tpr)
-        
-    #         soma_explained_variance_percent = 100.0 * explained_variance_score(
-    #             y_soma_GT_.ravel(), y_soma_hat_.ravel()
-    #         )
-    #         soma_RMSE = np.sqrt(MSE(y_soma_GT_.ravel(), y_soma_hat_.ravel()))
-    #         soma_MAE = MAE(y_soma_GT_.ravel(), y_soma_hat_.ravel())
-        
-    #         evaluations_results_dict["AUC"].append(AUC_score)
-    #         evaluations_results_dict["soma_explained_variance_percent"].append(soma_explained_variance_percent)
-    #         evaluations_results_dict["soma_RMSE"].append(soma_RMSE)
-    #         evaluations_results_dict["soma_MAE"].append(soma_MAE)
-        
-    #     evaluation_duration_min = (time.time() - evaluation_start_time) / 60            
-    #     if verbose:
-    #         print(
-    #             "finished evaluation. time took to evaluate results is %.2f minutes"
-    #             % (evaluation_duration_min)
-    #         )
-    #         print(
-    #             "----------------------------------------------------------------------------------------"
-    #         )
-    
-    #     return evaluations_results_dict
-        
+    evaluations_results_dict = {}       
     for desired_FP in desired_FP_list:
         TP_at_desired_FP = calc_TP_at_desired_FP(
             y_spikes_GT, y_spikes_hat, desired_false_positive_rate=desired_FP
@@ -346,7 +292,7 @@ def compute_test_predictions(
     burn_in_time: int = 0,
     input_window_size: int = 500,
     rest_start: bool = False,
-    starting_choice= None,
+    recover_points= None,
     v_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
     y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
     y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
@@ -370,9 +316,9 @@ def compute_test_predictions(
 
 
     if rest_start:
-        start_time_inds = starting_choice.T
-        num_test_splits = starting_choice.shape[1]
-        num_sim = starting_choice.shape[0]
+        start_time_inds = recover_points
+        num_test_splits = start_time_inds.shape[1]
+        num_sim = start_time_inds.shape[0]
     else:
         num_test_splits = int(
             2
@@ -382,13 +328,19 @@ def compute_test_predictions(
         start_time_inds = np.arange(num_test_splits, dtype=int) * (input_window_size - burn_in_time)
 
     for k in range(num_test_splits):
-        start_time_ind = start_time_inds[k]
+        start_time_ind = start_time_inds[:, k]
         end_time_ind = start_time_ind + input_window_size
         if rest_start:
-            curr_X_test = np.stack([X_test[i, start_time_ind[i]:end_time_ind[i], :] for i in range(num_sim)], axis=1)
+            curr_X_test = []
+            for i in range(num_sim):
+                section = X_test[i, start_time_ind[i]:end_time_ind[i], :]
+                if section.shape[0] < input_window_size:
+                    section = np.pad(section, ((0, input_window_size - section.shape[0]), (0,0)), mode='constant', constant_values = 0)
+                curr_X_test.append(section)
+            curr_X_test = np.stack(curr_X_test, axis=0)
         else:
             curr_X_test = X_test[:, start_time_ind:end_time_ind, :]
-
+        
         # padding added to end to fill up to input_window_size (ok)
         if curr_X_test.shape[1] < input_window_size:
             padding_size = input_window_size - curr_X_test.shape[1]
@@ -411,30 +363,57 @@ def compute_test_predictions(
                 outputs[..., 0:1],
                 outputs[..., 1:2],
             )
-
-        if k == 0:
-            # prediction for first split (no need to throw away burn in)
-            y1_test_hat[:, :end_time_ind, :] = curr_y1_test 
-            y2_test_hat[:, :end_time_ind, :] = curr_y2_test 
-        elif k == (num_test_splits - 1):
-            # prediction for last split (throw away burn in, only fill array)
-            t0 = start_time_ind + burn_in_time
-            duration_to_fill = y1_test_hat.shape[1] - t0
-            y1_test_hat[:, t0:, :] = curr_y1_test[
-                :, burn_in_time : (burn_in_time + duration_to_fill), :
-            ]
-            y2_test_hat[:, t0:, :] = curr_y2_test[
-                :, burn_in_time : (burn_in_time + duration_to_fill), :
-            ]
+        if rest_start:
+            if k == 0:
+                # prediction for first split (no need to throw away burn in)
+                y1_test_hat[:, :end_time_ind[0], :] = curr_y1_test 
+                y2_test_hat[:, :end_time_ind[0], :] = curr_y2_test 
+            else:
+                for i in range(num_sim):
+                    if start_time_ind[i]==-1:
+                        continue
+                    t0 = start_time_ind[i] + burn_in_time
+                    if start_time_ind[i] + input_window_size > y1_test_hat.shape[1]:
+                        # prediction for last split (throw away burn in, only fill array)
+                        duration_to_fill = y1_test_hat.shape[1] - t0
+                        y1_test_hat[i, t0:, :] = curr_y1_test[
+                            i, burn_in_time : (burn_in_time + duration_to_fill), :
+                        ]
+                        y2_test_hat[i, t0:, :] = curr_y2_test[
+                            i, burn_in_time : (burn_in_time + duration_to_fill), :
+                        ]
+                    else:
+                        # regular prediction for split (throw away burn in)
+                        y1_test_hat[i, t0:end_time_ind[i], :] = curr_y1_test[
+                            i, burn_in_time:, :
+                        ]
+                        y2_test_hat[i, t0:end_time_ind[i], :] = curr_y2_test[
+                            i, burn_in_time:, :
+                        ]
         else:
-            # regular prediction for split (throw away burn in)
-            t0 = start_time_ind + burn_in_time
-            y1_test_hat[:, t0:end_time_ind, :] = curr_y1_test[
-                :, burn_in_time:, :
-            ]
-            y2_test_hat[:, t0:end_time_ind, :] = curr_y2_test[
-                :, burn_in_time:, :
-            ]
+            if k == 0:
+                # prediction for first split (no need to throw away burn in)
+                y1_test_hat[:, :end_time_ind, :] = curr_y1_test 
+                y2_test_hat[:, :end_time_ind, :] = curr_y2_test 
+            elif k == (num_test_splits - 1):
+                # prediction for last split (throw away burn in, only fill array)
+                t0 = start_time_ind + burn_in_time
+                duration_to_fill = y1_test_hat.shape[1] - t0
+                y1_test_hat[:, t0:, :] = curr_y1_test[
+                    :, burn_in_time : (burn_in_time + duration_to_fill), :
+                ]
+                y2_test_hat[:, t0:, :] = curr_y2_test[
+                    :, burn_in_time : (burn_in_time + duration_to_fill), :
+                ]
+            else:
+                # regular prediction for split (throw away burn in)
+                t0 = start_time_ind + burn_in_time
+                y1_test_hat[:, t0:end_time_ind, :] = curr_y1_test[
+                    :, burn_in_time:, :
+                ]
+                y2_test_hat[:, t0:end_time_ind, :] = curr_y2_test[
+                    :, burn_in_time:, :
+                ]
 
     # NOTE: the following should probably not be done, however,
     # for comparability to previous methods, we leave it in,
