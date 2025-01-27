@@ -121,7 +121,7 @@ if __name__ == "__main__":
     model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
-    model_config["memory_tau_max"] = 30.0
+    model_config["memory_tau_max"] = float(args.N)
     model_config["tau_b_value"] = 1.0
     model_config["learn_memory_tau"] = False
     model_config["num_synapse_per_branch"] = 1
@@ -217,7 +217,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
             #print(outputs.shape, Nsum.shape)
-            loss = CELoss(outputs[:,:2], parity) + 0.5*MSELoss(outputs[:,2], Nsum) 
+            loss = CELoss(outputs[:,:2], parity) + 1/Ns[0]*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
             ########
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
@@ -242,8 +242,8 @@ if __name__ == "__main__":
             #         g['lr'] *= 1.5
             #     if check_lr[-1] >= 1:
             #         break
-            if acc.item() >0.95:
-                break
+           # if acc.item() >0.95:
+            #    break
 
         avg_acc = running_acc / train_config["batches_per_epoch"]
         # Copy model state dict if validation RMSE has improved
@@ -256,6 +256,11 @@ if __name__ == "__main__":
             #)
 
         # Print statistics
+        print(
+            f"Epoch: {epoch+1}, "
+            f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
+            f'Train Accuracy: {avg_acc:.5f}'
+        )
         
         if avg_acc > 0.95:
             print(
