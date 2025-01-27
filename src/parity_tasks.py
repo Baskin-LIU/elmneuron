@@ -23,36 +23,52 @@ def generate_sparse_binary_sequence(M, sparsity=0.9):
 def get_parity(vec, N):
     return (vec[-N:].sum() % 2).long()
 
-def make_batch_Nbit_pair_parity(Ns, bs, duplicate=1, classify_in_time=False):
+def make_batch_Nbit_pair_parity(Ns, batch_size, duplicate=1, classify_in_time=False, device="cpu"):
     M_min = Ns[-1] + 2
     M_max = M_min + 3 * Ns[-1]
     M = np.random.randint(M_min, M_max)
     with torch.no_grad():
-        sequences = [generate_binary_sequence(M).unsqueeze(-1) for i in range(bs)]
+        sequences = (torch.rand(batch_size, M) < 0.5) * 1.
         if classify_in_time:
             if duplicate != 1:
                 raise NotImplementedError
-            labels = [torch.stack([get_parity_in_time(s, N) for s in sequences]) for N in Ns]
+            labels = [get_parity_in_time(sequences, N).to(device) for N in Ns]
         else:
-            labels = [torch.stack([get_parity(s, N) for s in sequences]) for N in Ns]
+            labels = [get_parity_in_time(sequences, N)[:-1].to(device) for N in Ns]
         # in each sequence of length M, duplicate each bit (duplicate) times
-        sequences = [torch.repeat_interleave(s, duplicate, dim=0) for s in sequences]
-        sequences = torch.stack(sequences)
-        sequences = sequences.permute(1, 0, 2)
+        sequences = torch.repeat_interleave(sequences, duplicate, dim=1).unsqueeze(-1).to(device)
     return sequences, labels
 
 
-def get_parity_in_time(vec, N):
-    labels = []
-    for idx in np.arange(N, len(vec)):
-        vec_t = vec[idx-N:idx]
-        l = get_parity(vec_t, N)
-        labels.append(l)
-        # labels.append(((vec_t + 1) / 2)[-N:].sum() % 2)
+def get_parity_in_time(sequences, N):
+    cumsum = torch.cumsum(sequences, dim=1)
+    cumsum_ = torch.cat((torch.zeros((sequences.shape[0], 1)), cumsum[:, :-N]), dim=1)
+    labels = (cumsum[:, N-1:] - cumsum_) % 2
 
-    labels = torch.stack(labels).long()
+    return labels.long()
 
-    return labels
+
+def make_batch_Nbit_pair_paritysum(Ns, batch_size, duplicate=1, classify_in_time=False, device="cpu"):
+    M_min = Ns[-1] + 2
+    M_max = M_min + 3 * Ns[-1]
+    M = np.random.randint(M_min, M_max)
+    with torch.no_grad():
+        sequences = (torch.rand(batch_size, M) < 0.5) * 1.
+        labels = []
+        for N in Ns:
+            parity, Nsum = get_paritysum_in_time(sequences, N)
+            labels.append((parity.to(device), Nsum.to(device)))
+        # in each sequence of length M, duplicate each bit (duplicate) times
+        sequences = torch.repeat_interleave(sequences, duplicate, dim=1).unsqueeze(-1).to(device)
+    return sequences, labels
+
+def get_paritysum_in_time(sequences, N):
+    cumsum = torch.cumsum(sequences, dim=1)
+    cumsum_ = torch.cat((torch.zeros((sequences.shape[0], 1)), cumsum[:, :-N]), dim=1)
+    last_N_sum = cumsum[:, N-1:] - cumsum_
+    labels = (last_N_sum) % 2
+
+    return labels.long(), last_N_sum
 
 ############ DMS TASKS ##################
 

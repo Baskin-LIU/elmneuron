@@ -6,11 +6,13 @@ import random
 import sys
 import tempfile
 import argparse
+import matplotlib.pyplot as plt
 from pathlib import Path
 
 import numpy as np
 import torch
 import torch.optim as optim
+import torch.nn as nn
 import wandb
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm import tqdm
@@ -19,9 +21,9 @@ from tqdm import tqdm
 package_path = Path(os.path.abspath(os.path.join(os.path.dirname('__file__'), '..')))  # TODO: change to elmneuron path
 sys.path.insert(0, str(package_path))
 
-from src.expressive_leaky_memory_neuron import ELM
+from src.expressive_leaky_memory_neuron_v2 import ELM
 from src.expressive_leaky_memory_neuron_forget import ELMf
-from src.parity_task import make_batch_Nbit_pair_parity
+from src.parity_tasks import make_batch_Nbit_pair_parity, make_batch_Nbit_pair_paritysum
 
 if __name__ == "__main__":
 
@@ -33,14 +35,13 @@ if __name__ == "__main__":
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
     parser.add_argument("--mlp_num_layers", type=int, default=1)
-    parser.add_argument("--burn_in_time", type=int, default=150)
     
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--num_prefetch_batch", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
-    parser.set_defaults(short_run=False, rest_start=False, forget_gate=False)
+    parser.set_defaults(short_run=False, forget_gate=False)
     
     args = parser.parse_args()
 
@@ -58,7 +59,7 @@ if __name__ == "__main__":
     # wandb config
     api_key_file = Path("~/.wandbAPIkey.txt").expanduser().resolve()
     project_name = "Parity"
-    group_name = "N"%(args.N)
+    group_name = "N%2d"%(args.N)
 
     # login to wandb
     with open(api_key_file, "r") as file:
@@ -101,12 +102,8 @@ if __name__ == "__main__":
     # Location of downloaded folders
     if args.machine=="MLcloud":
         data_dir_path = Path("../../data")#Path("D:/NeuronIO").expanduser().resolve() 
-        train_data_dir_path = data_dir_path  
-        test_data_dir_path = data_dir_path / "Data_test"  
     elif args.machine=="PC":
         data_dir_path = Path("D:/NeuronIO").expanduser().resolve() 
-        train_data_dir_path = data_dir_path / "train"  
-        test_data_dir_path = data_dir_path / "test/Data_test"  
     else:
         print("Unknown location")
 
@@ -119,12 +116,13 @@ if __name__ == "__main__":
 
     model_config = dict()
     model_config["num_input"] = 1
-    model_config["num_output"] = 1
+    model_config["num_output"] = 3
     model_config["num_memory"] = args.num_memory
     model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
-    model_config["memory_tau_max"] = 50.0
+    model_config["memory_tau_max"] = 30.0
+    model_config["tau_b_value"] = 1.0
     model_config["learn_memory_tau"] = False
     model_config["num_synapse_per_branch"] = 1
 
@@ -132,17 +130,12 @@ if __name__ == "__main__":
 
     train_config = dict()
     train_config['forget_gate'] = args.forget_gate
-    train_config["num_epochs"] = 5 if general_config["short_training_run"] else 35
+    train_config["num_epochs"] = 1 if general_config["short_training_run"] else 2000
     train_config["learning_rate"] = 5e-4
-    train_config["batch_size"] = 8 if general_config["short_training_run"] else 8
-    train_config["batches_per_epoch"] = 1000 if general_config["short_training_run"] else 10000
+    train_config["batch_size"] = 32 if general_config["short_training_run"] else 32
+    train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 2000
     train_config["batches_per_epoch"] = int(8/train_config["batch_size"] * train_config["batches_per_epoch"])
-    train_config["file_load_fraction"] = 0.5 if general_config["short_training_run"] else 0.3
-    train_config["num_prefetch_batch"] = 2 if args.machine=="PC" else args.num_prefetch_batch
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
-    train_config["burn_in_time"] = args.burn_in_time
-    train_config["input_window_size"] = 100
-    train_config["ignore_time_from_start"] = 400
 
     # Save Configs
 
@@ -166,18 +159,7 @@ if __name__ == "__main__":
     ########## Data, Model and Training Setup ##########
     print("Data, model and training setup started...")
 
-    # Preparing Data Loaders
-
-    # Visualize training data
-    X_viz, (y_spike_viz, y_soma_viz) = next(iter(train_data_loader))
-    visualize_training_batch(
-        X_viz,
-        y_spike_viz,
-        y_soma_viz,
-        num_viz=8,
-        save_fig_path=str(artefacts_dir / "training_batch.png"),
-    )
-
+    #train_config["learning_rate"] = 1e-6
 
     # Initialize the ELM model
     if train_config['forget_gate']:
@@ -186,7 +168,8 @@ if __name__ == "__main__":
         model = ELM(**model_config).to(torch_device)
 
     # Initialize the loss function, optimizer, and scheduler
-    criterion = nn.CrossEntropyLoss()
+    CELoss = nn.CrossEntropyLoss()
+    MSELoss = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=train_config["learning_rate"])
     scheduler = CosineAnnealingLR(
         optimizer, T_max=train_config["batches_per_epoch"] * train_config["num_epochs"]
@@ -200,6 +183,7 @@ if __name__ == "__main__":
 
     # Initialize the best validation RMSE to a high value
     best_valid_rmse = float("inf")
+    best_acc = float("inf")
     best_model_state_dict = model.state_dict().copy()
 
     # Training loop
@@ -207,82 +191,101 @@ if __name__ == "__main__":
     train_auc_hist = []
     valid_rmse_hist = []
     valid_auc_hist = []
+    Ns = [args.N]
+
+    #sequences, labels = make_batch_Nbit_pair_parity(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device)
+    #print(sequences[0], labels[0][0])
+    #print(sequences.shape, labels[0].shape)
+    check_loss = []
+    check_lr = []
+    grad_step = []
     for epoch in range(train_config["num_epochs"]):
         # Training
         model.train()
         running_loss = 0.0
+        running_acc = 0.0
         pbar = tqdm(
-            enumerate(train_data_loader, 0),
+            range(train_config["batches_per_epoch"]),
             total=train_config["batches_per_epoch"],
             disable=not general_config["verbose"],
         )
-        for i, data in pbar:
-            inputs, targets = make_batch_Nbit_pair_parity(Ns, bs, duplicate=1, classify_in_time=False)
-            sequences = sequences.to(device)
-            labels = [l.to(device) for l in labels]
-
+        for i in pbar:
+            sequences, labels = make_batch_Nbit_pair_paritysum(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device)
+            #parity = labels[0]
+            parity, Nsum = labels[0]
             # Perform a single training step
             optimizer.zero_grad()
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+            outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
+            #print(outputs.shape, Nsum.shape)
+            loss = CELoss(outputs[:,:2], parity) + 0.5*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
+            ########
+            #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
+            ########
             optimizer.step()
             scheduler.step()
 
-            prediction = outputs
-
+            _, prediction = torch.max(outputs[:,:2], dim=1)
+            #print(prediction.shape)
+            acc = ((prediction==parity) * 1.).mean()
             # Update running loss
+            running_acc += acc.item()
             running_loss += loss.item()
             pbar.set_description(f"Epoch {epoch+1} Loss: {running_loss / (i+1):.5f}")
 
-        model.eval()
-        with torch.no_grad():
-            # Evaluate on training data
-            train_eval_metrics = train_evaluator.evaluate(model)
-            train_rmse = train_eval_metrics["soma_RMSE"]
-            train_auc = train_eval_metrics["AUC"]
-            train_rmse_hist.append(train_rmse)
-            train_auc_hist.append(train_auc)
 
-            # Evaluate on validation data
-            valid_eval_metrics = valid_evaluator.evaluate(model)
-            valid_rmse = valid_eval_metrics["soma_RMSE"]
-            valid_auc = valid_eval_metrics["AUC"]
-            valid_rmse_hist.append(valid_rmse)
-            valid_auc_hist.append(valid_auc)
+            
+            # if i%100==0:
+            #     check_loss.append(loss.item())
+            #     check_lr.append(optimizer.param_groups[0]['lr'])
+            #     for g in optimizer.param_groups:                
+            #         g['lr'] *= 1.5
+            #     if check_lr[-1] >= 1:
+            #         break
+            if acc.item() >0.95:
+                break
 
+        avg_acc = running_acc / train_config["batches_per_epoch"]
         # Copy model state dict if validation RMSE has improved
-        if valid_rmse < best_valid_rmse:
-            best_valid_rmse = valid_rmse
+        if avg_acc > best_acc:
+            best_acc = avg_acc
             best_model_state_dict = model.state_dict().copy()
-
             # save model for later
-            torch.save(
-                best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, args.N, args.num_memory))
-            )
+            #torch.save(
+                #best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, args.N, args.num_memory))
+            #)
 
         # Print statistics
-        print(
-            f"Epoch: {epoch+1}, "
-            f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
-            f"Train RMSE: {train_rmse:.5f}, Train AUC: {train_auc:.5f}, "
-            f"Valid RMSE: {valid_rmse:.5f}, Valid AUC: {valid_auc:.5f}"
-        )
+        
+        if avg_acc > 0.95:
+            print(
+                f"Epoch: {epoch+1}, "
+                f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
+                f'Train Accuracy: {avg_acc:.5f}'
+            )
+            print("N=%d solved"%Ns[0])
+            Ns[0] += 1
 
         # Log statistics
         wandb.log(
             {
                 "epoch": epoch + 1,
                 "train_loss": running_loss / train_config["batches_per_epoch"],
-                "train_rmse": train_rmse,
-                "train_auc": train_auc,
-                "valid_rmse": valid_rmse,
-                "valid_auc": valid_auc,
+                "train_acc": avg_acc,
             }
         )
 
+    #print(grad_step[0].shape)
+    #grad_step = torch.concat(grad_step, dim = 0).numpy()
+    #print(grad_step.shape)
+    # fig, axs = plt.subplots(2, 1)
+    # axs[0].plot(check_lr, check_loss)
+    # axs[0].set_xscale('log')
+    # #for i in grad_step:
+    # axs[1].plot(grad_step)
+    # plt.show()
+    
     # Free up memory
-    del train_data_loader
     gc.collect()
 
     ########## EVALUATION ##########
@@ -293,71 +296,6 @@ if __name__ == "__main__":
     model.eval()
 
     # Visualize predictions
-    with torch.no_grad():
-        outputs = model.neuronio_eval_forward(X_viz)
-        visualize_training_batch(
-            X_viz,
-            y_spike_viz,
-            y_soma_viz,
-            outputs[..., 0],
-            outputs[..., 1],
-            num_viz=8,
-            save_fig_path=str(artefacts_dir / "training_batch_inference.png"),
-        )
-
-    # Gather all evaluation metrics
-    with torch.no_grad():
-        if not general_config["short_training_run"]:
-            random.seed(general_config["seed"])
-            select_train_files = random.choices(train_files, k=10)
-            train_predictions = compute_test_predictions_multiple_sim_files(
-                neuron=model,
-                test_files=select_train_files,
-                burn_in_time=train_config["burn_in_time"],
-                input_window_size=train_config["input_window_size"],
-                device=torch_device,
-            )
-            train_results = filter_and_extract_core_results(
-                *train_predictions, verbose=False
-            )
-
-            valid_predictions = compute_test_predictions_multiple_sim_files(
-                neuron=model,
-                test_files=valid_files,
-                burn_in_time=train_config["burn_in_time"],
-                input_window_size=train_config["input_window_size"],
-                device=torch_device,
-            )
-            valid_results = filter_and_extract_core_results(
-                *valid_predictions, verbose=False
-            )
-
-        test_predictions = compute_test_predictions_multiple_sim_files(
-            neuron=model,
-            test_files=test_files,
-            burn_in_time=train_config["burn_in_time"],
-            input_window_size=train_config["input_window_size"],
-            device=torch_device,
-        )
-        test_results = filter_and_extract_core_results(*test_predictions, verbose=False)
-
-    eval_results = dict()
-    if not general_config["short_training_run"]:
-        eval_results["train_results"] = train_results
-        eval_results["valid_results"] = valid_results
-    eval_results["test_results"] = test_results
-
-    # Show evaluation results
-    print(eval_results)
-
-    ########## SERIALIZATION ##########
-    print("Serialization started...")
-
-    model_stats = dict()
-    # calculate model params and flops
-    with torch.no_grad():
-        model_stats["model_param_count"] = get_num_trainable_params(model)
-        model_stats["model_flop_count"] = None  # TODO: use appropirate package
 
     # save eval results
     with open(str(artefacts_dir / "eval_results.json"), "w", encoding="utf-8") as f:
