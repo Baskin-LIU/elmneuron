@@ -30,18 +30,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--short_run", dest="short_run", action="store_true")
     parser.add_argument("--forget_gate", dest="forget_gate", action="store_true")
+    parser.add_argument("--learn_mem_tau", dest="learn_mem_tau", action="store_true")
     
     parser.add_argument("--N", type=int, default=10)
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
     parser.add_argument("--mlp_num_layers", type=int, default=1)
+    parser.add_argument("--max_tau", type=float, default=30.)
     
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--num_prefetch_batch", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
-    parser.set_defaults(short_run=False, forget_gate=False)
+    parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False)
     
     args = parser.parse_args()
 
@@ -121,9 +123,9 @@ if __name__ == "__main__":
     model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
-    model_config["memory_tau_max"] = float(args.N)
+    model_config["memory_tau_max"] = args.max_tau
     model_config["tau_b_value"] = 1.0
-    model_config["learn_memory_tau"] = False
+    model_config["learn_memory_tau"] = args.learn_mem_tau
     model_config["num_synapse_per_branch"] = 1
 
     # Training Config
@@ -217,7 +219,7 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
             #print(outputs.shape, Nsum.shape)
-            loss = CELoss(outputs[:,:2], parity) + 1/Ns[0]*MSELoss(outputs[:,2], Nsum) 
+            loss = CELoss(outputs[:,:2], parity) + 1./Ns[0]*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
             ########
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
@@ -269,7 +271,9 @@ if __name__ == "__main__":
                 f'Train Accuracy: {avg_acc:.5f}'
             )
             print("N=%d solved"%Ns[0])
-            Ns[0] += 1
+            print(model.tau_m)
+            break
+            #Ns[0] += 1
 
         # Log statistics
         wandb.log(
