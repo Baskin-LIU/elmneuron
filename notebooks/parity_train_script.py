@@ -131,7 +131,7 @@ if __name__ == "__main__":
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
     model_config["memory_tau_max"] = args.max_tau
-    model_config["tau_b_value"] = 1.0
+    model_config["tau_b_value"] = 0.0
     model_config["learn_memory_tau"] = args.learn_mem_tau
     model_config["num_synapse_per_branch"] = 1
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
             loss = CELoss(outputs[:,:2], parity)
             if args.Nsum:
-                loss += 10./Ns[0]/Ns[0]*MSELoss(outputs[:,2], Nsum) 
+                loss += 1./Ns[0]*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
             optimizer.step()
