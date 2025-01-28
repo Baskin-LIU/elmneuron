@@ -31,6 +31,9 @@ if __name__ == "__main__":
     parser.add_argument("--short_run", dest="short_run", action="store_true")
     parser.add_argument("--forget_gate", dest="forget_gate", action="store_true")
     parser.add_argument("--learn_mem_tau", dest="learn_mem_tau", action="store_true")
+    parser.add_argument("--curriculum", dest="curriculum", action="store_true")
+    parser.add_argument("--Nsum", dest="Nsum", action="store_true")
+    
     
     parser.add_argument("--N", type=int, default=10)
     parser.add_argument("--num_memory", type=int, default=10)
@@ -42,8 +45,9 @@ if __name__ == "__main__":
     parser.add_argument("--num_prefetch_batch", type=int, default=20)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
+    parser.add_argument("--save_model", dest="save_model", action="store_true")
 
-    parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False)
+    parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False, curriculum=False, Nsum=False, save_model=False)
     
     args = parser.parse_args()
 
@@ -112,13 +116,16 @@ if __name__ == "__main__":
     # Data Config
 
     data_config = dict()
+    data_config["N"] = args.N
+    data_config['curriculum'] = args.curriculum
+    data_config["Nsum"] = args.Nsum
 
 
     # Model Config
 
     model_config = dict()
     model_config["num_input"] = 1
-    model_config["num_output"] = 3
+    model_config["num_output"] = 3 if data_config["Nsum"] else 2
     model_config["num_memory"] = args.num_memory
     model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
@@ -189,15 +196,8 @@ if __name__ == "__main__":
     best_model_state_dict = model.state_dict().copy()
 
     # Training loop
-    train_rmse_hist = []
-    train_auc_hist = []
-    valid_rmse_hist = []
-    valid_auc_hist = []
     Ns = [args.N]
 
-    #sequences, labels = make_batch_Nbit_pair_parity(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device)
-    #print(sequences[0], labels[0][0])
-    #print(sequences.shape, labels[0].shape)
     check_loss = []
     check_lr = []
     grad_step = []
@@ -218,12 +218,11 @@ if __name__ == "__main__":
             # Perform a single training step
             optimizer.zero_grad()
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
-            #print(outputs.shape, Nsum.shape)
-            loss = CELoss(outputs[:,:2], parity) + 1./Ns[0]*MSELoss(outputs[:,2], Nsum) 
+            loss = CELoss(outputs[:,:2], parity)
+            if args.Nsum:
+                loss += 10./Ns[0]/Ns[0]*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
-            ########
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
-            ########
             optimizer.step()
             scheduler.step()
 
@@ -237,13 +236,6 @@ if __name__ == "__main__":
 
 
             
-            # if i%100==0:
-            #     check_loss.append(loss.item())
-            #     check_lr.append(optimizer.param_groups[0]['lr'])
-            #     for g in optimizer.param_groups:                
-            #         g['lr'] *= 1.5
-            #     if check_lr[-1] >= 1:
-            #         break
            # if acc.item() >0.95:
             #    break
 
@@ -252,10 +244,7 @@ if __name__ == "__main__":
         if avg_acc > best_acc:
             best_acc = avg_acc
             best_model_state_dict = model.state_dict().copy()
-            # save model for later
-            #torch.save(
-                #best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, args.N, args.num_memory))
-            #)
+            
 
         # Print statistics
         print(
@@ -271,9 +260,11 @@ if __name__ == "__main__":
                 f'Train Accuracy: {avg_acc:.5f}'
             )
             print("N=%d solved"%Ns[0])
-            print(model.tau_m)
-            break
-            #Ns[0] += 1
+            if args.curriculum:
+                Ns[0] += 1
+            else:
+                break
+            
 
         # Log statistics
         wandb.log(
@@ -293,28 +284,16 @@ if __name__ == "__main__":
     # #for i in grad_step:
     # axs[1].plot(grad_step)
     # plt.show()
-    
+    print(model.tau_m)
     # Free up memory
     gc.collect()
-
-    ########## EVALUATION ##########
-    print("Evaluation started...")
-
-    # Load the best model for evaluation
-    model.load_state_dict(best_model_state_dict)
-    model.eval()
-
-    # Visualize predictions
-
-    # save eval results
-    with open(str(artefacts_dir / "eval_results.json"), "w", encoding="utf-8") as f:
-        json.dump(eval_results, f, ensure_ascii=False, indent=4, sort_keys=True)
-    wandb.log(eval_results)
-    with open(str(artefacts_dir / "model_stats.json"), "w", encoding="utf-8") as f:
-        json.dump(model_stats, f, ensure_ascii=False, indent=4, sort_keys=True)
-    wandb.log({"model_stats": model_stats})
-
     # TODO: copy artefacts_dir for local version
+
+    # save model for later
+    if args.save_model:
+        torch.save(
+            best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, Ns[0], args.num_memory))
+        )
 
     # save artefacts to wandb
     wandb.save(
