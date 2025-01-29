@@ -33,8 +33,8 @@ if __name__ == "__main__":
     parser.add_argument("--learn_mem_tau", dest="learn_mem_tau", action="store_true")
     parser.add_argument("--curriculum", dest="curriculum", action="store_true")
     parser.add_argument("--Nsum", dest="Nsum", action="store_true")
-    
-    
+        
+    parser.add_argument("--delayed_response", type=int, default=0)
     parser.add_argument("--N", type=int, default=10)
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
@@ -139,12 +139,14 @@ if __name__ == "__main__":
 
     train_config = dict()
     train_config['forget_gate'] = args.forget_gate
-    train_config["num_epochs"] = 1 if general_config["short_training_run"] else 2000
+    train_config["num_epochs"] = 1 if general_config["short_training_run"] else 4000
     train_config["learning_rate"] = 5e-4
     train_config["batch_size"] = 32 if general_config["short_training_run"] else 32
-    train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 2000
+    train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 1000
     train_config["batches_per_epoch"] = int(8/train_config["batch_size"] * train_config["batches_per_epoch"])
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
+    train_config["delayed_response"] = args.delayed_response
+    delay = train_config["delayed_response"]
 
     # Save Configs
 
@@ -197,10 +199,7 @@ if __name__ == "__main__":
 
     # Training loop
     Ns = [args.N]
-
-    check_loss = []
-    check_lr = []
-    grad_step = []
+    epochs = []
     for epoch in range(train_config["num_epochs"]):
         # Training
         model.train()
@@ -212,13 +211,13 @@ if __name__ == "__main__":
             disable=not general_config["verbose"],
         )
         for i in pbar:
-            sequences, labels = make_batch_Nbit_pair_paritysum(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device)
+            sequences, labels = make_batch_Nbit_pair_paritysum(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device, delay = delay)
             #parity = labels[0]
             parity, Nsum = labels[0]
             # Perform a single training step
             optimizer.zero_grad()
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
-            loss = CELoss(outputs[:,:2], parity)
+            loss = CELoss(outputs[:,:2,delay:], parity)
             if args.Nsum:
                 loss += 1./Ns[0]*MSELoss(outputs[:,2], Nsum) 
             loss.backward()
@@ -226,18 +225,13 @@ if __name__ == "__main__":
             optimizer.step()
             scheduler.step()
 
-            _, prediction = torch.max(outputs[:,:2], dim=1)
+            _, prediction = torch.max(outputs[:,:2,delay:], dim=1)
             #print(prediction.shape)
             acc = ((prediction==parity) * 1.).mean()
             # Update running loss
             running_acc += acc.item()
             running_loss += loss.item()
             pbar.set_description(f"Epoch {epoch+1} Loss: {running_loss / (i+1):.5f}")
-
-
-            
-           # if acc.item() >0.95:
-            #    break
 
         avg_acc = running_acc / train_config["batches_per_epoch"]
         # Copy model state dict if validation RMSE has improved
@@ -247,22 +241,26 @@ if __name__ == "__main__":
             
 
         # Print statistics
-        print(
-            f"Epoch: {epoch+1}, "
-            f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
-            f'Train Accuracy: {avg_acc:.5f}'
-        )
-        
-        if avg_acc > 0.95:
+        if not data_config['curriculum']:
             print(
                 f"Epoch: {epoch+1}, "
                 f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
                 f'Train Accuracy: {avg_acc:.5f}'
             )
-            print("N=%d solved"%Ns[0])
-            if args.curriculum:
+        
+        if avg_acc > 0.95:    
+            if data_config['curriculum']:
+                print(
+                    f"Epoch: {epoch+1}, "
+                    f'Train Loss: {running_loss / train_config["batches_per_epoch"]:.5f}, '
+                    f'Train Accuracy: {avg_acc:.5f}'
+                    )
+                print("N=%d solved"%Ns[0])
+                print(model.tau_m.mean())
+                epochs.append(epoch+1)
                 Ns[0] += 1
             else:
+                print("N=%d solved"%Ns[0])
                 break
             
 
@@ -275,26 +273,16 @@ if __name__ == "__main__":
             }
         )
 
-    #print(grad_step[0].shape)
-    #grad_step = torch.concat(grad_step, dim = 0).numpy()
-    #print(grad_step.shape)
-    # fig, axs = plt.subplots(2, 1)
-    # axs[0].plot(check_lr, check_loss)
-    # axs[0].set_xscale('log')
-    # #for i in grad_step:
-    # axs[1].plot(grad_step)
-    # plt.show()
     print(model.tau_m)
     # Free up memory
     gc.collect()
-    # TODO: copy artefacts_dir for local version
 
     # save model for later
     if args.save_model:
         torch.save(
             best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, Ns[0], args.num_memory))
         )
-
+    print(epochs)
     # save artefacts to wandb
     wandb.save(
         str(artefacts_dir) + "/*", base_path=str(temporary_dir.name), policy="now"
