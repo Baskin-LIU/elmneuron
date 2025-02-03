@@ -42,11 +42,11 @@ if __name__ == "__main__":
     parser.add_argument("--max_tau", type=float, default=30.)
     
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--num_prefetch_batch", type=int, default=20)
+    parser.add_argument("--num_prefetch_batch", type=int, default=2)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
     parser.add_argument("--save_model", dest="save_model", action="store_true")
-
+    parser.add_argument("--num_epochs", type=int, default=300)
     parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False, curriculum=False, Nsum=False, save_model=False)
     
     args = parser.parse_args()
@@ -98,20 +98,6 @@ if __name__ == "__main__":
     ########## Data, Model and Training Config ##########
     print("Data, model and training configuration started...")
 
-    # NOTE: this step requires you having downloaded the dataset
-
-    # Download Train Data:
-    # https://www.kaggle.com/datasets/selfishgene/single-neurons-as-deep-nets-nmda-train-data
-    # Download Test Data:
-    # https://www.kaggle.com/datasets/selfishgene/single-neurons-as-deep-nets-nmda-test-data # Data_test
-
-    # Location of downloaded folders
-    if args.machine=="MLcloud":
-        data_dir_path = Path("../../data")#Path("D:/NeuronIO").expanduser().resolve() 
-    elif args.machine=="PC":
-        data_dir_path = Path("D:/NeuronIO").expanduser().resolve() 
-    else:
-        print("Unknown location")
 
     # Data Config
 
@@ -139,7 +125,7 @@ if __name__ == "__main__":
 
     train_config = dict()
     train_config['forget_gate'] = args.forget_gate
-    train_config["num_epochs"] = 1 if general_config["short_training_run"] else 4000
+    train_config["num_epochs"] = 1 if general_config["short_training_run"] else args.num_epochs
     train_config["learning_rate"] = 5e-4
     train_config["batch_size"] = 32 if general_config["short_training_run"] else 32
     train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 1000
@@ -147,6 +133,7 @@ if __name__ == "__main__":
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
     train_config["delayed_response"] = args.delayed_response
     delay = train_config["delayed_response"]
+    reset_optimizer = False
 
     # Save Configs
 
@@ -263,7 +250,10 @@ if __name__ == "__main__":
             else:
                 print("N=%d solved"%Ns[0])
                 break
-            
+           
+        if running_loss < 0.70 and reset_optimizer:
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+            reset_optimizer = False
 
         # Log statistics
         wandb.log(
