@@ -55,6 +55,7 @@ class ELM(jit.ScriptModule):
         num_synapse_per_branch: int = 1,
         input_to_synapse_routing: Optional[str] = None,
         delta_t: float = 1.0,
+        method = 'constant',
     ):
         super(ELM, self).__init__()
         self.num_input, self.num_output = num_input, num_output
@@ -97,19 +98,7 @@ class ELM(jit.ScriptModule):
         tau_b = torch.full((self.num_branch,), tau_b_value)
         self.tau_b = nn.parameter.Parameter(tau_b, requires_grad=False)
 
-        # initialization of memory time constants and decay factors
-        _proto_tau_m = torch.logspace(
-            math.log10(self.memory_tau_min + 1e-6),
-            math.log10(self.memory_tau_max - 1e-6),
-            num_memory,
-        )
-        _proto_tau_m = inverse_scaled_sigmoid(
-            _proto_tau_m, self.memory_tau_min, self.memory_tau_max
-        )
-        self._proto_tau_m = nn.parameter.Parameter(
-            _proto_tau_m, requires_grad=learn_memory_tau
-        )
-
+        self.tau_m_init(method)
         # NOTE: part of model for ease of use
         routing_artifacts = self.create_input_to_synapse_indices()
         self.input_to_synapse_indices = nn.parameter.Parameter(
@@ -119,6 +108,35 @@ class ELM(jit.ScriptModule):
             routing_artifacts[1], requires_grad=False
         )
 
+    def tau_m_init(self, method):
+        # initialization of memory time constants and decay factors
+        if method == "logspace":
+            _proto_tau_m = torch.logspace(
+                math.log10(self.memory_tau_min + 1e-6),
+                math.log10(self.memory_tau_max - 1e-6),
+                self.num_memory,
+            )
+            _proto_tau_m = inverse_scaled_sigmoid(
+                _proto_tau_m, self.memory_tau_min, self.memory_tau_max
+            )
+            self._proto_tau_m = nn.parameter.Parameter(
+                _proto_tau_m, requires_grad=self.learn_memory_tau
+            )
+        elif method == "constant":
+            _proto_tau_m = torch.full((self.num_memory,), -5.)
+            _proto_tau_m[0] = 5.
+            _proto_tau_m[1] = 0.
+            _proto_tau_m[2] = -2.
+            _proto_tau_m[3] = -3.
+            _proto_tau_m[4] = -4.
+            _proto_tau_m[5] = -4.5
+            _proto_tau_m[6] = -10.
+            self._proto_tau_m = nn.parameter.Parameter(
+                _proto_tau_m, requires_grad=self.learn_memory_tau
+            )
+        else:
+            raise NotImplementedError
+            
     @property
     def tau_m(self):
         return scaled_sigmoid(

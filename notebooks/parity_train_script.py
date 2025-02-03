@@ -21,7 +21,7 @@ from tqdm import tqdm
 package_path = Path(os.path.abspath(os.path.join(os.path.dirname('__file__'), '..')))  # TODO: change to elmneuron path
 sys.path.insert(0, str(package_path))
 
-from src.expressive_leaky_memory_neuron_v2 import ELM
+from src.expressive_leaky_memory_neuron_initialization import ELM
 from src.expressive_leaky_memory_neuron_forget import ELMf
 from src.parity_tasks import make_batch_Nbit_pair_parity, make_batch_Nbit_pair_paritysum
 
@@ -200,6 +200,7 @@ if __name__ == "__main__":
     # Training loop
     Ns = [args.N]
     epochs = []
+    print(model.tau_m)
     for epoch in range(train_config["num_epochs"]):
         # Training
         model.train()
