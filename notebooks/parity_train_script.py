@@ -33,6 +33,7 @@ if __name__ == "__main__":
     parser.add_argument("--learn_mem_tau", dest="learn_mem_tau", action="store_true")
     parser.add_argument("--curriculum", dest="curriculum", action="store_true")
     parser.add_argument("--Nsum", dest="Nsum", action="store_true")
+    parser.add_argument("--reduce_beta", dest="reduce_beta", action="store_true")
         
     parser.add_argument("--delayed_response", type=int, default=0)
     parser.add_argument("--N", type=int, default=10)
@@ -40,6 +41,7 @@ if __name__ == "__main__":
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
     parser.add_argument("--mlp_num_layers", type=int, default=1)
     parser.add_argument("--max_tau", type=float, default=30.)
+    parser.add_argument("--min_tau", type=float, default=1.)
     
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--num_prefetch_batch", type=int, default=2)
@@ -47,7 +49,8 @@ if __name__ == "__main__":
     parser.add_argument("--machine", type=str, default="MLcloud")
     parser.add_argument("--save_model", dest="save_model", action="store_true")
     parser.add_argument("--num_epochs", type=int, default=300)
-    parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False, curriculum=False, Nsum=False, save_model=False)
+    parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False, curriculum=False, 
+                        Nsum=False, save_model=False, reduce_beta = False)
     
     args = parser.parse_args()
 
@@ -115,7 +118,7 @@ if __name__ == "__main__":
     model_config["num_memory"] = args.num_memory
     model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
-    model_config["memory_tau_min"] = 1.0
+    model_config["memory_tau_min"] = args.min_tau
     model_config["memory_tau_max"] = args.max_tau
     model_config["tau_b_value"] = 0.0
     model_config["learn_memory_tau"] = args.learn_mem_tau
@@ -133,7 +136,8 @@ if __name__ == "__main__":
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
     train_config["delayed_response"] = args.delayed_response
     delay = train_config["delayed_response"]
-    reset_optimizer = False
+    train_config["reduce_beta"] = args.reduce_beta
+    reduce_beta = args.reduce_beta
 
     # Save Configs
 
@@ -185,6 +189,7 @@ if __name__ == "__main__":
     best_model_state_dict = model.state_dict().copy()
 
     # Training loop
+    beta = 2.
     Ns = [args.N]
     epochs = []
     print(model.tau_m)
@@ -207,7 +212,8 @@ if __name__ == "__main__":
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
             loss = CELoss(outputs[:,:2,delay:], parity)
             if args.Nsum:
-                loss += 1./Ns[0]*MSELoss(outputs[:,2], Nsum) 
+                #loss += beta./Ns[0]*MSELoss(outputs[:,2], Nsum)
+                loss += beta * MSELoss(outputs[:,2], Nsum/Ns[0]) 
             loss.backward()
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
             optimizer.step()
@@ -222,11 +228,6 @@ if __name__ == "__main__":
             pbar.set_description(f"Epoch {epoch+1} Loss: {running_loss / (i+1):.5f}")
 
         avg_acc = running_acc / train_config["batches_per_epoch"]
-        # Copy model state dict if validation RMSE has improved
-        if avg_acc > best_acc:
-            best_acc = avg_acc
-            best_model_state_dict = model.state_dict().copy()
-            
 
         # Print statistics
         if not data_config['curriculum']:
@@ -251,9 +252,9 @@ if __name__ == "__main__":
                 print("N=%d solved"%Ns[0])
                 break
            
-        if running_loss < 0.70 and reset_optimizer:
-            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-            reset_optimizer = False
+        if running_loss < 0.70 and reduce_beta:
+            beta /= 4
+            reduce_beta = False
 
         # Log statistics
         wandb.log(
@@ -271,7 +272,7 @@ if __name__ == "__main__":
     # save model for later
     if args.save_model:
         torch.save(
-            best_model_state_dict, str("../models/new_exp/parity_best_model_forget_%r_N_%r_nummem_%d.pt"%(args.forget_gate, Ns[0], args.num_memory))
+            model.state_dict(), str("../models/new_exp/parity_best_model_forget_%r_N_%d_nummem_%d_%d.pt"%(args.forget_gate, Ns[0], args.num_memory, args.seed))
         )
     print(epochs)
     # save artefacts to wandb

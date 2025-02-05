@@ -201,10 +201,11 @@ class ELM(jit.ScriptModule):
         batch_size, _ = x.shape
         b_inp = (w_s * x).view(batch_size, self.num_branch, -1).sum(dim=-1)
         b_t = kappa_b * b_prev + b_inp
-        delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
+        mlp_out = self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1))
+        delta_m_t = custom_tanh(mlp_out)
         m_t = kappa_m * m_prev + (1 - kappa_lambda) * delta_m_t
         y_t = self.w_y(m_t)
-        return y_t, b_t, m_t
+        return y_t, b_t, m_t, mlp_out
 
     @jit.script_method
     def forward(self, X):
@@ -217,7 +218,7 @@ class ELM(jit.ScriptModule):
         outputs = torch.jit.annotate(List[torch.Tensor], [])
         inputs = self.route_input_to_synapses(X)
         for t in range(T):
-            y_t, b_prev, m_prev = self.dynamics(
+            y_t, b_prev, m_prev, _ = self.dynamics(
                 inputs[:, t], b_prev, m_prev, w_s, kappa_b, kappa_m, kappa_lambda
             )
             outputs.append(y_t)
@@ -256,7 +257,7 @@ class ELM(jit.ScriptModule):
         m_record = torch.jit.annotate(List[torch.Tensor], [])
         inputs = self.route_input_to_synapses(X)
         for t in range(T):
-            y_t, b_prev, m_prev = self.dynamics(
+            y_t, b_prev, m_prev, _ = self.dynamics(
                 inputs[:, t], b_prev, m_prev, w_s, kappa_b, kappa_m, kappa_lambda
             )
             outputs.append(y_t)
@@ -273,3 +274,33 @@ class ELM(jit.ScriptModule):
         outputs = torch.stack([spike_pred, soma_pred], dim=-1)
 
         return outputs, b_record, m_record
+
+    # NOTE: part of model for ease of use
+    @jit.script_method
+    def parity_viz_forward(
+        self, X, y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE
+    ):
+        # compute the the recurrent dynamics for a sample
+        batch_size, T, _ = X.shape
+        w_s = self.w_s
+        kappa_b, kappa_m, kappa_lambda = self.kappa_b, self.kappa_m, self.kappa_lambda
+        b_prev = torch.zeros(batch_size, len(kappa_b), device=X.device)
+        m_prev = torch.zeros(batch_size, len(kappa_m), device=X.device)
+
+        # calcualte the outputs, synapse and memory values
+        outputs = torch.jit.annotate(List[torch.Tensor], [])
+        mlp_record = torch.jit.annotate(List[torch.Tensor], [])
+        m_record = torch.jit.annotate(List[torch.Tensor], [])
+        inputs = self.route_input_to_synapses(X)
+        for t in range(T):
+            y_t, b_prev, m_prev, mlp_out = self.dynamics(
+                inputs[:, t], b_prev, m_prev, w_s, kappa_b, kappa_m, kappa_lambda
+            )
+            outputs.append(y_t)
+            mlp_record.append(mlp_out)
+            m_record.append(m_prev)
+        outputs = torch.stack(outputs, dim=-2)
+        mlp_record = torch.stack(mlp_record, dim=-2)
+        m_record = torch.stack(m_record, dim=-2)
+
+        return outputs, mlp_record, m_record
