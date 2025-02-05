@@ -172,7 +172,7 @@ if __name__ == "__main__":
     # Initialize the loss function, optimizer, and scheduler
     CELoss = nn.CrossEntropyLoss()
     MSELoss = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=train_config["learning_rate"])
+    optimizer = optim.Adam(model.parameters(), lr=train_config["learning_rate"], weight_decay=0.)
     scheduler = CosineAnnealingLR(
         optimizer, T_max=train_config["batches_per_epoch"] * train_config["num_epochs"]
     )
@@ -204,7 +204,8 @@ if __name__ == "__main__":
             disable=not general_config["verbose"],
         )
         for i in pbar:
-            sequences, labels = make_batch_Nbit_pair_paritysum(Ns, train_config["batch_size"], duplicate=1, classify_in_time=True, device=torch_device, delay = delay)
+            sequences, labels = make_batch_Nbit_pair_paritysum(Ns, train_config["batch_size"], duplicate=1, 
+                                                               classify_in_time=True, device=torch_device, delay = delay)
             #parity = labels[0]
             parity, Nsum = labels[0]
             # Perform a single training step
@@ -213,7 +214,8 @@ if __name__ == "__main__":
             loss = CELoss(outputs[:,:2,delay:], parity)
             if args.Nsum:
                 #loss += beta./Ns[0]*MSELoss(outputs[:,2], Nsum)
-                loss += beta * MSELoss(outputs[:,2], Nsum/Ns[0]) 
+                loss += beta * MSELoss(outputs[:,2], Nsum/Ns[0])
+                loss += 0.1 * MSELoss(model.mlp.network[2].weight.mean(), torch.tensor(0).float().to(torch_device))
             loss.backward()
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
             optimizer.step()
@@ -252,7 +254,7 @@ if __name__ == "__main__":
                 print("N=%d solved"%Ns[0])
                 break
            
-        if running_loss < 0.70 and reduce_beta:
+        if running_loss < 0.694 and reduce_beta:
             beta /= 4
             reduce_beta = False
 
