@@ -189,7 +189,7 @@ if __name__ == "__main__":
     best_model_state_dict = model.state_dict().copy()
 
     # Training loop
-    beta = 2.
+    beta = 1.
     Ns = [args.N]
     epochs = []
     print(model.tau_m)
@@ -215,7 +215,7 @@ if __name__ == "__main__":
             if args.Nsum:
                 #loss += beta./Ns[0]*MSELoss(outputs[:,2], Nsum)
                 loss += beta * MSELoss(outputs[:,2], Nsum/Ns[0])
-                loss += 0.1 * MSELoss(model.mlp.network[2].weight.mean(), torch.tensor(0).float().to(torch_device))
+                loss += 1e-2 * torch.square(model.mlp.network[2].weight[4:]).mean()
             loss.backward()
             #grad_step.append(model.w_y.weight.grad.cpu().norm(2)) 
             optimizer.step()
