@@ -130,7 +130,7 @@ if __name__ == "__main__":
     train_config['forget_gate'] = args.forget_gate
     train_config["num_epochs"] = 1 if general_config["short_training_run"] else args.num_epochs
     train_config["learning_rate"] = 5e-4
-    train_config["batch_size"] = 64 if general_config["short_training_run"] else 64
+    train_config["batch_size"] = 32 if general_config["short_training_run"] else 32
     train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 1000
     train_config["batches_per_epoch"] = int(8/train_config["batch_size"] * train_config["batches_per_epoch"])
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
@@ -211,12 +211,11 @@ if __name__ == "__main__":
             # Perform a single training step
             optimizer.zero_grad()
             outputs = model(sequences)[:, Ns[0]-1:].permute(0, 2, 1)
-            loss = CELoss(outputs[:,:2,delay:], parity)
             if args.Nsum:
                 #loss += beta/Ns[0]*MSELoss(outputs[:,2], Nsum)
                 loss += beta * Ns[0]* MSELoss(outputs[:,2], Nsum/Ns[0])
                 loss += 1e-4 * torch.square(model.mlp.network[2].weight).sum()
-                #loss += 1e-3 * torch.square(model.mlp.network[2].weight.mean(dim=1)).sum() #certering loss
+                #loss += 1e-3 * torch.square(model.mlp.network[2].weight.mean(dim=1)).sum() #centering loss
             loss.backward()
             optimizer.step()
             scheduler.step()

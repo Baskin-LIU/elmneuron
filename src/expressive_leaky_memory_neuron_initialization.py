@@ -89,6 +89,18 @@ class ELM(jit.ScriptModule):
             mlp_num_layers,
             mlp_activation,
         )
+        torch.nn.init.normal_(self.mlp.network[2].weight, mean=0, std=1e-2)
+
+        #####symmetric init####
+        # p = 0.8
+        # mlp_weights=torch.zeros(self.mlp.network[2].weight.shape)
+        # P = torch.rand(self.mlp.network[2].weight.shape)
+        # mlp_weights[P < p] = 0.1
+        # mlp_weights[P < p/2] = -0.1
+        # self.mlp.network[2].weight = nn.parameter.Parameter(mlp_weights, requires_grad=True)
+        # print(self.mlp.network[2].weight)
+        ########################################################
+        
         self._proto_w_s = nn.parameter.Parameter(
             torch.full((self.num_synapse,), w_s_value)
         )

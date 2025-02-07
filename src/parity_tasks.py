@@ -40,6 +40,22 @@ def make_batch_Nbit_pair_parity(Ns, batch_size, duplicate=1, classify_in_time=Fa
     return sequences, labels
 
 
+def make_batch_Nbit_pair_Nsum(Ns, batch_size, duplicate=1, classify_in_time=False, device="cpu"):
+    M_min = Ns[-1] + 2
+    M_max = M_min + 3 * Ns[-1]
+    M = np.random.randint(M_min, M_max)
+    with torch.no_grad():
+        sequences = (torch.rand(batch_size, M) < 0.5) * 1.
+        if classify_in_time:
+            if duplicate != 1:
+                raise NotImplementedError
+            labels = [get_parity_in_time(sequences, N).to(device) for N in Ns]
+        else:
+            labels = [get_parity_in_time(sequences, N)[:-1].to(device) for N in Ns]
+        # in each sequence of length M, duplicate each bit (duplicate) times
+        sequences = torch.repeat_interleave(sequences, duplicate, dim=1).unsqueeze(-1).to(device)
+    return sequences, labels
+
 def get_parity_in_time(sequences, N):
     cumsum = torch.cumsum(sequences, dim=1)
     cumsum_ = torch.cat((torch.zeros((sequences.shape[0], 1)), cumsum[:, :-N]), dim=1)
