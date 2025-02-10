@@ -88,9 +88,14 @@ class ELMf(jit.ScriptModule):
             mlp_num_layers,
             mlp_activation,
         )
+        # self.mlpf = nn.Sequential(
+        #     nn.Linear(self.num_mlp_input,num_memory),
+        #     nn.Sigmoid()
+        # )
+        self.threshold = nn.parameter.Parameter(torch.full((self.num_output,), 0.5))
         self.mlpf = nn.Sequential(
-            nn.Linear(self.num_mlp_input,num_memory),
-            nn.Sigmoid()
+            nn.ReLU(),
+            nn.Linear(self.num_output,num_memory),
         )
         
         self._proto_w_s = nn.parameter.Parameter(
@@ -98,19 +103,19 @@ class ELMf(jit.ScriptModule):
         )
         self.w_y = nn.Linear(num_memory, num_output)
 
-        #constant init
-        #nn.init.constant_(self.mlpf[0].bias, 1.0)
+        ##constant init
+        nn.init.constant_(self.mlpf[-1].bias, 4.0)
         #chrono init
         #self.mlpf[0].bias =  torch.nn.Parameter(torch.log(nn.init.uniform_(self.mlpf[0].bias, 1, 1000 - 1)))
-        bias = torch.linspace(
-            math.log(self.memory_tau_min + 1e-6),
-            math.log(self.memory_tau_max - 1e-6),
-            num_memory,
-        )
-        self.mlpf[0].bias = nn.parameter.Parameter(
-            bias, requires_grad=learn_memory_tau
-        )
-        self.mlpf[0].bias.requires_grad_(learn_memory_tau)
+        # bias = torch.linspace(
+        #     math.log(self.memory_tau_min + 1e-6),
+        #     math.log(self.memory_tau_max - 1e-6),
+        #     num_memory,
+        # )
+        # self.mlpf[0].bias = nn.parameter.Parameter(
+        #     bias, requires_grad=learn_memory_tau
+        # )
+        # self.mlpf[0].bias.requires_grad_(learn_memory_tau)
 
         # initialization of branch time constants and decay factors
         tau_b = torch.full((self.num_branch,), tau_b_value)
@@ -203,10 +208,12 @@ class ELMf(jit.ScriptModule):
         b_inp = (w_s * x).view(batch_size, self.num_branch, -1).sum(dim=-1)
         b_t = kappa_b * b_prev + b_inp
         delta_m_t = custom_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
-        gamma_m_t = self.mlpf(torch.cat([b_t, kappa_m * m_prev], dim=-1))
-        #m_t = kappa_m * m_prev * gamma_m_t + (1 - kappa_lambda) * delta_m_t
-        m_t = m_prev * gamma_m_t +  (1 - gamma_m_t) * delta_m_t #* self.lambda_value
+        #gamma_m_t = self.mlpf(torch.cat([b_t, kappa_m * m_prev], dim=-1))
+        m_t = kappa_m * m_prev + (1 - kappa_lambda) * delta_m_t
+        #m_t = m_prev * gamma_m_t +  (1 - gamma_m_t) * delta_m_t #* self.lambda_value
         y_t = self.w_y(m_t)
+        gamma_m_t = torch.sigmoid(self.mlpf(y_t - self.threshold))
+        m_t = gamma_m_t * m_t
         return y_t, b_t, m_t
 
     @jit.script_method

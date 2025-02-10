@@ -41,7 +41,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--short_run", dest="short_run", action="store_true")
     parser.add_argument("--rest_start", dest="rest_start", action="store_true")
-    parser.add_argument("--freeze_mlp", dest="forget_gate", action="store_true")
+    parser.add_argument("--freeze_mlp", dest="freeze_mlp", action="store_true")
     
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
@@ -49,7 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("--burn_in_time", type=int, default=150)
     
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--num_prefetch_batch", type=int, default=20)
+    parser.add_argument("--num_prefetch_batch", type=int, default=10)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
@@ -253,19 +253,19 @@ if __name__ == "__main__":
     # Initialize the ELM model
     model = ELM(**model_config).to(torch_device)
 
+    if args.freeze_mlp:
+        #nn.init.constant_(model.mlp.network[0].weight, 0.5/model_config["num_memory"])
+        torch.nn.init.normal_(model.mlp.network[0].weight, 0, 0.3/model_config["num_memory"])
+        torch.nn.init.constant_(model.mlp.network[0].bias, 0)
+        for name, parameter in model.mlp.named_parameters():
+            parameter.requires_grad = False
+
     # Initialize the loss function, optimizer, and scheduler
     criterion = NeuronioLoss()
     optimizer = optim.Adam(model.parameters(), lr=train_config["learning_rate"])
     scheduler = CosineAnnealingLR(
         optimizer, T_max=train_config["batches_per_epoch"] * train_config["num_epochs"]
     )
-
-    if args.freeze_mlp:
-        #nn.init.constant_(model.mlp.network[0].weight, 0.5/model_config["num_memory"])
-        nn.init.normal_(model.mlp.network[0].weight, 0, 0.3/model_config["num_memory"])
-        nn.init.constant_(model.mlp.network[0].bias, 0)
-        for parameter in model.mlp.parameters():
-            parameter.requires_grad = False
 
     # Visualize ELM model
     print(model)

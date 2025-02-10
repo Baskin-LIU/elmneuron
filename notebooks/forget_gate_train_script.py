@@ -53,7 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
-    parser.set_defaults(short_run=False, rest_start=False, freeze_mlp=False)
+    parser.set_defaults(short_run=False, rest_start=False, forget_gate=False)
     
     args = parser.parse_args()
 
@@ -70,8 +70,8 @@ if __name__ == "__main__":
 
     # wandb config
     api_key_file = Path("~/.wandbAPIkey.txt").expanduser().resolve()
-    project_name = "ELM_ablation"
-    group_name = "freeze_mlp_%r"%(args.freeze_mlp)
+    project_name = "ELM_forget_rest"
+    group_name = "forget_gate_%r"%(args.forget_gate)
 
     # login to wandb
     with open(api_key_file, "r") as file:
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     model_config["num_input"] = data_config["data_dim"]
     model_config["num_output"] = data_config["label_dim"]
     model_config["num_memory"] = args.num_memory
-    model_config["mlp_num_layers"] = 0 if args.freeze_mlp else args.mlp_num_layers
+    model_config["mlp_num_layers"] = args.mlp_num_layers
     model_config["mlp_hidden_size"] = args.mlp_hidden_size if args.mlp_hidden_size>0 else 2*model_config["num_memory"]
     model_config["memory_tau_min"] = 1.0
     model_config["memory_tau_max"] = 150.0
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     # Training Config
 
     train_config = dict()
-    train_config['freeze_mlp'] = args.freeze_mlp
+    train_config['forget_gate'] = args.forget_gate
     train_config["num_epochs"] = 5 if general_config["short_training_run"] else 35
     train_config["learning_rate"] = 5e-4
     train_config["batch_size"] = 8 if general_config["short_training_run"] else 8
@@ -251,7 +251,10 @@ if __name__ == "__main__":
 
 
     # Initialize the ELM model
-    model = ELM(**model_config).to(torch_device)
+    if train_config['forget_gate']:
+        model = ELMf(**model_config).to(torch_device)
+    else:
+        model = ELM(**model_config).to(torch_device)
 
     # Initialize the loss function, optimizer, and scheduler
     criterion = NeuronioLoss()
@@ -259,13 +262,6 @@ if __name__ == "__main__":
     scheduler = CosineAnnealingLR(
         optimizer, T_max=train_config["batches_per_epoch"] * train_config["num_epochs"]
     )
-
-    if args.freeze_mlp:
-        #nn.init.constant_(model.mlp.network[0].weight, 0.5/model_config["num_memory"])
-        nn.init.normal_(model.mlp.network[0].weight, 0, 0.3/model_config["num_memory"])
-        nn.init.constant_(model.mlp.network[0].bias, 0)
-        for parameter in model.mlp.parameters():
-            parameter.requires_grad = False
 
     # Visualize ELM model
     print(model)
