@@ -48,7 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
     parser.add_argument("--save_model", dest="save_model", action="store_true")
-    parser.add_argument("--num_epochs", type=int, default=200)
+    parser.add_argument("--num_epochs", type=int, default=250)
     parser.set_defaults(short_run=False, forget_gate=False, learn_mem_tau=False, curriculum=False, 
                         Nsum=False, save_model=False, reduce_beta = False)
     
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     train_config['forget_gate'] = args.forget_gate
     train_config["num_epochs"] = 1 if general_config["short_training_run"] else args.num_epochs
     train_config["learning_rate"] = 5e-4
-    train_config["batch_size"] = 64 if general_config["short_training_run"] else 64
+    train_config["batch_size"] = 32 if general_config["short_training_run"] else 32
     train_config["batches_per_epoch"] = 2000000 if general_config["short_training_run"] else 1000
     train_config["batches_per_epoch"] = int(8/train_config["batch_size"] * train_config["batches_per_epoch"])
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
@@ -214,7 +214,7 @@ if __name__ == "__main__":
             loss = CELoss(outputs[:,:2,delay:], parity)
             if args.Nsum:
                 #loss += beta/Ns[0]*MSELoss(outputs[:,2], Nsum)
-                loss += beta * Ns[0]* MSELoss(outputs[:,2], Nsum/Ns[0])
+                loss += beta * MSELoss(outputs[:,2], Nsum/Ns[0])
                 loss += 1e-4 * torch.square(model.mlp.network[2].weight).sum()
                 #loss += 1e-3 * torch.square(model.mlp.network[2].weight.mean(dim=1)).sum() #certering loss
             loss.backward()
