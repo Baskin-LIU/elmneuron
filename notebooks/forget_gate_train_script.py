@@ -325,7 +325,7 @@ if __name__ == "__main__":
 
             # save model for later
             torch.save(
-                best_model_state_dict, str("../models/new_exp/neuronio_best_model_forget_%r_rest_%r_nummem_%d.pt"%(args.forget_gate, args.rest_start, args.num_memory))
+                best_model_state_dict, str("../models/new_exp/neuronio_best_model_forget_%r_rest_%r_nummem_%d_%d.pt"%(args.forget_gate, args.rest_start, args.num_memory, args.seed))
             )
 
         # Print statistics
