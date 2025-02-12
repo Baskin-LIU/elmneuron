@@ -21,7 +21,7 @@ sys.path.insert(0, str(package_path))
 
 from src.expressive_leaky_memory_neuron_v2 import ELM
 from src.expressive_leaky_memory_neuron_forget import ELMf
-from src.neuronio.neuronio_data_loader_filtered import NeuronIO
+from src.neuronio.neuronio_data_loader import NeuronIO
 from src.neuronio.neuronio_data_utils import (
     NEURONIO_DATA_DIM,
     NEURONIO_LABEL_DIM,
@@ -40,7 +40,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--short_run", dest="short_run", action="store_true")
-    parser.add_argument("--rest_start", dest="rest_start", action="store_true")
     parser.add_argument("--freeze_mlp", dest="freeze_mlp", action="store_true")
     
     parser.add_argument("--num_memory", type=int, default=10)
@@ -49,7 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("--burn_in_time", type=int, default=150)
     
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--num_prefetch_batch", type=int, default=10)
+    parser.add_argument("--num_prefetch_batch", type=int, default=4)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
@@ -176,10 +175,6 @@ if __name__ == "__main__":
     train_config["num_workers"] = args.num_workers # will make run nondeterministic
     train_config["burn_in_time"] = args.burn_in_time
     train_config["input_window_size"] = 500
-    train_config["rest_start"] = args.rest_start
-    train_config["sec_len"] = 200
-    train_config["start_save_path"] = '../data_processed/NeuronIOstartpoint/'
-    train_config["ignore_time_from_start"] = 400
 
     # Save Configs
 
@@ -217,11 +212,7 @@ if __name__ == "__main__":
         num_workers=train_config["num_workers"],
         num_prefetch_batch=train_config["num_prefetch_batch"],
         file_load_fraction=train_config["file_load_fraction"],
-        rest_start = train_config["rest_start"],
-        sec_len = train_config["sec_len"],
-        save_path = train_config["start_save_path"],
         seed=general_config["seed"],
-        ignore_time_from_start = train_config["ignore_time_from_start"],
         device=torch_device,
     )
 

@@ -55,7 +55,7 @@ class ELM(jit.ScriptModule):
         num_synapse_per_branch: int = 1,
         input_to_synapse_routing: Optional[str] = None,
         delta_t: float = 1.0,
-        method = 'constant',
+        method = 'logspace',
     ):
         super(ELM, self).__init__()
         self.num_input, self.num_output = num_input, num_output
@@ -89,7 +89,7 @@ class ELM(jit.ScriptModule):
             mlp_num_layers,
             mlp_activation,
         )
-        torch.nn.init.normal_(self.mlp.network[2].weight, mean=0, std=1e-2)
+        nn.init.normal_(self.mlp.network[2].weight, mean=0, std=0.5/self.num_memory)
 
         #####symmetric init####
         # p = 0.8
@@ -105,6 +105,8 @@ class ELM(jit.ScriptModule):
             torch.full((self.num_synapse,), w_s_value)
         )
         self.w_y = nn.Linear(num_memory, num_output)
+        nn.init.kaiming_normal_(self.w_y.weight, mode='fan_in', nonlinearity='linear')
+        nn.init.constant_(self.w_y.bias, 1e-1)
 
         # initialization of branch time constants and decay factors
         tau_b = torch.full((self.num_branch,), tau_b_value)
