@@ -33,27 +33,38 @@ class LIF(torch.nn.Module):
         self.decay = nn.parameter.Parameter(decay, requires_grad=self.learn_tau)
         self.spiking_func = SurrGradSpike()
         
-    def forward(self, ode):
+    def forward(self, ode, start_v=None):
         ode = ode.squeeze(-1)
-        v = torch.full(ode.shape, self.v_rest, device=ode.device)
-        spikes = torch.zeros(ode.shape, dtype=int, device=ode.device)
-        counter = torch.zeros(ode.shape[0], device=ode.device, dtype=int)
+        dv = ode
+        v_rec = []
+        s_rec = []
+        v = torch.zeros(ode.shape[0], device=ode.device)
+        v += start_v if not (start_v is None) else self.v_rest
+        counter = torch.zeros(ode.shape[0], device=ode.device)
         
         for t in range(ode.shape[1]):            
             #integrate and leak
-            v[:, t] = v[:, t-1] - self.decay*(v[:, t-1] - self.v_rest)
-            v[counter==1, t] = self.v_reset        ##allow compensate reset
-            v[:, t] += ode[:, t]
-            v[counter>1, t] = self.v_threshold    ##hard set
+            v = v - self.decay*(v - self.v_rest)
+            v[counter==1] = self.v_reset        ##allow compensate reset
+            v += ode[:, t]
+            v[counter>1] = self.v_threshold    ##hard set
             
             #spike
-            s = self.spiking_func.apply(v[:, t] - self.v_threshold)
-            counter[(s>0)] = self.spike_duration+1
-            spikes[counter==self.spike_pos, t] = 1
-            v[counter>1, t] = self.v_threshold
+            s = self.spiking_func.apply(v - self.v_threshold)
+            counter += (self.spike_duration+1)*s.detach()
+            #spikes[counter==self.spike_pos] = 1 #should spike immediately? 
+            v[counter>1] = self.v_threshold
+            dv[s.detach()>0, t-1: t+6] = 0.
             counter -= 1
+            counter = torch.clamp(counter, min=0)
+
+            v_rec.append(v)
+            s_rec.append(s)
+
+        v_rec = torch.stack(v_rec,dim=1)
+        s_rec = torch.stack(s_rec,dim=1)
             
-        return v, spikes
+        return v_rec, s_rec, dv
 
 
 class SurrGradSpike(torch.autograd.Function):
