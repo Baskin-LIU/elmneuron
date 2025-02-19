@@ -67,10 +67,19 @@ def generate_batch(
     neuronio_label_dim: int = NEURONIO_LABEL_DIM,
     neuronio_data_dim: int = NEURONIO_DATA_DIM,
 ):
+    
     # randomly sample simulations for current batch
-    selected_sim_inds = generate_batch_rng.choice(
-        neuronio_sim_per_file, size=batch_size, replace=False
-    )
+    high_rate_sim=False
+    if high_rate_sim:
+        qualified = torch.nonzero(y_spike.squeeze(-1).sum(dim=1) > 12)
+        selected_sim_inds = generate_batch_rng.choice(
+            qualified.shape[0], size=batch_size, replace=False
+        )
+        selected_sim_inds=qualified[selected_sim_inds]
+    else:
+        selected_sim_inds = generate_batch_rng.choice(
+            neuronio_sim_per_file, size=batch_size, replace=False
+        )
 
     if rest_start:
         ignore_start, ignore_end = ignore_points
@@ -105,8 +114,6 @@ def generate_batch(
 
     # Gather batch data
     for k, (sim_ind, time_ind) in enumerate(zip(selected_sim_inds, selected_time_inds)):
-        #search_space = y_soma[sim_ind, time_ind-search_time : time_ind, :] 150
-        #time_ind -= (search_time - torch.argmin(search_space).item())
         X_batch[k] = X[sim_ind, time_ind : time_ind + input_window_size, :]
         y_spike_batch[k] = y_spike[sim_ind, time_ind : time_ind + input_window_size, :]
         y_soma_batch[k] = y_soma[sim_ind, time_ind : time_ind + input_window_size, :]
