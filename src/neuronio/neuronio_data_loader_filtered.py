@@ -41,7 +41,7 @@ def preprocess_data(
     y_soma = torch.from_numpy(y_soma).float().T.unsqueeze(2)
 
     # Apply thresholding
-    y_soma[y_soma > y_soma_threshold] = y_soma_threshold
+    #y_soma[y_soma > y_soma_threshold] = y_soma_threshold
 
     # Bias correction and scaling
     y_soma = (y_soma - y_train_soma_bias) * y_train_soma_scale

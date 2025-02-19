@@ -5,6 +5,12 @@ from .neuronio.neuronio_data_utils import DEFAULT_Y_TRAIN_SOMA_SCALE
 import torch
 import torch.nn as nn
 
+def sigmoid_spike(x, scale, b):
+    return torch.sigmoid(scale*x + b)
+
+def relu_spike(x, scale, b):
+    return torch.clamp(scale*torch.relu(x), max=1.)
+
 class self_inhibit(nn.Module):
 
     def __init__(
@@ -14,22 +20,33 @@ class self_inhibit(nn.Module):
         tau: float = 50.0,
         inh_strength: float = 1,
         learn_tau = False,
-        learn_sigmoid = False, 
+        learn_scale = False, 
+        clamp = True,
         delta_t: float = 1.0,
+        spike_func: str = 'sigmoid',
     ):
         super(self_inhibit, self).__init__()
-        self.elm=elm
+        self.elm = elm
         self.v_threshold = v_threshold
         self.tau = tau
         self.inh_strength = inh_strength
         self.learn_tau = learn_tau
-        self.learn_sigmoid = learn_sigmoid
+        self.learn_scale = learn_scale
+        self.clamp = clamp
         
         self.decay = nn.parameter.Parameter(torch.tensor(1/self.tau), requires_grad=self.learn_tau)
-        self.sigmoid_scale = nn.parameter.Parameter(torch.tensor(10.0), requires_grad=self.learn_sigmoid)
-        self.b = nn.parameter.Parameter(torch.tensor(-1.0), requires_grad=self.learn_sigmoid)
-        #self.spiking_func = nn.LeakyReLU(negative_slope=1e2)#
-        self.spiking_func = nn.ReLU()
+        
+        if spike_func=='sigmoid':
+            self.spike_scale = nn.parameter.Parameter(torch.tensor(10.0), requires_grad=self.learn_scale)
+            self.b = nn.parameter.Parameter(torch.tensor(-1.0), requires_grad=self.learn_scale)
+            self.spiking_func = sigmoid_spike
+        elif spike_func=='relu':
+            self.spike_scale = nn.parameter.Parameter(torch.tensor(1.0), requires_grad=self.learn_scale)
+            self.b = None
+            self.spiking_func = relu_spike
+        else:
+            raise NotImplementedError
+
         
     def forward(self, inputs):
         elm_output = self.elm(inputs)
@@ -40,8 +57,7 @@ class self_inhibit(nn.Module):
         inh = torch.zeros(x.shape[0], device=x.device)
         for t in range(x.shape[1]):
             v = x[:, t] - inh         
-            #s = self.spiking_func(v-self.v_threshold)
-            s = torch.sigmoid(self.sigmoid_scale*(v-self.v_threshold) + self.b)
+            s = self.spiking_func(v-self.v_threshold, self.spike_scale, self.b)
             inh = self.decay*inh + self.inh_strength * torch.relu(v-self.v_threshold)
             
             v_rec.append(v)
@@ -51,10 +67,11 @@ class self_inhibit(nn.Module):
         v_rec = torch.stack(v_rec,dim=1)
         s_rec = torch.stack(s_rec,dim=1)
         inh_rec = torch.stack(inh_rec,dim=1)
-        
-        #v_rec_clamp = torch.clamp(v_rec, max=self.v_threshold)
-        v_rec_clamp = v_rec - s_rec
-        #s_rec = torch.sigmoid(self.sigmoid_scale*s_rec - 2.) - self.b
+
+        if self.clamp:
+            v_rec_clamp = torch.clamp(v_rec, max=self.v_threshold)
+        else:
+            v_rec_clamp = v_rec
             
         return v_rec, s_rec, inh_rec, v_rec_clamp, x
 

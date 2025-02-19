@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--short_run", dest="short_run", action="store_true")
-    parser.add_argument("--train_sigmoid", dest="train_sigmoid", action="store_true")
+    parser.add_argument("--learn_scale", dest="learn_scale", action="store_true")
     
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
@@ -55,7 +55,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
-    parser.set_defaults(short_run=False, train_sigmoid=False)
+    parser.set_defaults(short_run=False, learn_scale=False)
     
     args = parser.parse_args()
 
@@ -73,7 +73,7 @@ if __name__ == "__main__":
     # wandb config
     api_key_file = Path("~/.wandbAPIkey.txt").expanduser().resolve()
     project_name = "ELM_self_inhibit"
-    group_name = "train_sigmoid_%r"%(args.train_sigmoid)
+    group_name = "learn_scale%r"%(args.learn_scale)
 
     # login to wandb
     with open(api_key_file, "r") as file:
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     # Training Config
 
     train_config = dict()
-    train_config['train_sigmoid'] = args.train_sigmoid
+    train_config['learn_scale'] = args.learn_scale
     train_config['inh_tau'] = args.inh_tau
     train_config['inh_strength'] = args.inh_strength
     train_config["num_epochs"] = 5 if general_config["short_training_run"] else 35
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     # Initialize the ELM model
     elm_model = ELM(**model_config).to(torch_device)
     model = self_inhibit(elm_model, v_threshold = 1.27, tau = train_config['inh_tau'], inh_strength=train_config['inh_strength'], 
-                         learn_sigmoid=train_config['train_sigmoid']).to(torch_device)
+                         learn_scale=train_config['learn_scale']).to(torch_device)
 
     # Initialize the loss function, optimizer, and scheduler
     MSEloss= nn.MSELoss(reduction="mean")
@@ -321,7 +321,7 @@ if __name__ == "__main__":
 
             # save model for later
             torch.save(
-                best_model_state_dict, str("../models/new_exp/neuronio_best_model_trainSigmoid_%r_nummem_%d_%d.pt"%(args.train_sigmoid, args.num_memory, args.seed))
+                best_model_state_dict, str("../models/new_exp/neuronio_best_model_learnScale_%r_nummem_%d_%d.pt"%(args.learn_scale, args.num_memory, args.seed))
             )
 
         # Print statistics
