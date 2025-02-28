@@ -41,7 +41,7 @@ def preprocess_data(
     y_soma = torch.from_numpy(y_soma).float().T.unsqueeze(2)
 
     # Apply thresholding
-    #y_soma[y_soma > y_soma_threshold] = y_soma_threshold
+    y_soma[y_soma > y_soma_threshold] = y_soma_threshold
 
     # Bias correction and scaling
     y_soma = (y_soma - y_train_soma_bias) * y_train_soma_scale
@@ -69,6 +69,7 @@ def generate_batch(
 ):
     
     # randomly sample simulations for current batch
+    partial = not rest_start
     high_rate_sim=False
     if high_rate_sim:
         qualified = torch.nonzero(y_spike.squeeze(-1).sum(dim=1) > 12)
@@ -93,6 +94,19 @@ def generate_batch(
         )
         selected_time_inds = np.array(
              [starting_choice[sim, time] for (sim, time) in zip(selected_sim_inds, selected_inds)])
+
+    elif partial:
+        ratio = 10 #inverse of ratio, 1/10
+        n  = (neuronio_sim_len - input_window_size - ignore_time_from_start)//ratio
+        selected_time_inds = (
+            generate_batch_rng.choice(
+                n,
+                size=batch_size,
+                replace=True,
+            )
+            * ratio
+            + ignore_time_from_start
+        )
         
     else: # randomly sample timepoints for current batch
         selected_time_inds = (

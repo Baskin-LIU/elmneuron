@@ -19,7 +19,7 @@ from tqdm import tqdm
 package_path = Path(os.path.abspath(os.path.join(os.path.dirname('__file__'), '..')))  # TODO: change to elmneuron path
 sys.path.insert(0, str(package_path))
 
-from src.expressive_leaky_memory_neuron_v2 import ELM
+from src.expressive_leaky_memory_neuron import ELM
 from src.expressive_leaky_memory_neuron_forget import ELMf
 from src.neuronio.neuronio_data_loader_filtered import NeuronIO
 from src.neuronio.neuronio_data_utils import (

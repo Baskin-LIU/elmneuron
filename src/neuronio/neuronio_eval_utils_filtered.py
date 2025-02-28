@@ -92,6 +92,7 @@ def compute_test_predictions_multiple_sim_files(
     rest_start: bool = False,
     verbose=False,
     encoding=None,
+    entire=False,
     device="cpu",
 ):
     assert len(test_files) > 0, "need at least one file to parse"
@@ -103,23 +104,32 @@ def compute_test_predictions_multiple_sim_files(
             test_file, verbose=verbose, encoding=encoding
         )
 
-        recover_points = None
-        if rest_start:
-            with open(START_SAVE_PATH + test_file[-92:-2]+'_recover.pkl', 'rb') as fp:
-                recover_points = pickle.load(fp)
-            recover_points = recover_points[burn_in_time]
-
-        y_spikes_GT, y_spikes_hat, y_soma_GT, y_soma_hat = compute_test_predictions(
-            neuron=neuron,
-            X_test=X_test,
-            y_spike_test=y_spike_test,
-            y_soma_test=y_soma_test,
-            burn_in_time=burn_in_time,
-            input_window_size=input_window_size,
-            rest_start=rest_start,
-            recover_points=recover_points,
-            device=device,
-        )
+        if entire:
+            y_spikes_GT, y_spikes_hat, y_soma_GT, y_soma_hat = compute_test_predictions_entire(
+                neuron=neuron,
+                X_test=X_test,
+                y_spike_test=y_spike_test,
+                y_soma_test=y_soma_test,
+                device=device,
+            )
+        else:    
+            recover_points = None
+            if rest_start:
+                with open(START_SAVE_PATH + test_file[-92:-2]+'_recover.pkl', 'rb') as fp:
+                    recover_points = pickle.load(fp)
+                recover_points = recover_points[burn_in_time]
+    
+            y_spikes_GT, y_spikes_hat, y_soma_GT, y_soma_hat = compute_test_predictions(
+                neuron=neuron,
+                X_test=X_test,
+                y_spike_test=y_spike_test,
+                y_soma_test=y_soma_test,
+                burn_in_time=burn_in_time,
+                input_window_size=input_window_size,
+                rest_start=rest_start,
+                recover_points=recover_points,
+                device=device,
+            )
         y_spikes_GT_all.append(y_spikes_GT)
         y_soma_GT_all.append(y_soma_GT)
         y_spikes_hat_all.append(y_spikes_hat)
@@ -418,6 +428,67 @@ def compute_test_predictions(
                 y2_test_hat[:, t0:end_time_ind, :] = curr_y2_test[
                     :, burn_in_time:, :
                 ]
+
+    # NOTE: the following should probably not be done, however,
+    # for comparability to previous methods, we leave it in,
+    # and due to the large dataset this should be negligible
+
+    # zero score the prediction and align it with the actual test
+    s_dst = y2_test.std()
+    m_dst = y2_test.mean()
+
+    s_src = y2_test_hat.std()
+    m_src = y2_test_hat.mean()
+
+    y2_test_hat = (y2_test_hat - m_src) / s_src
+    y2_test_hat = s_dst * y2_test_hat + m_dst
+
+    # convert to simple (num_simulations, num_time_points) format
+    y_spikes_GT = y1_test[:, :, 0]
+    y_spikes_hat = y1_test_hat[:, :, 0]
+    y_soma_GT = y2_test[:, :, 0]
+    y_soma_hat = y2_test_hat[:, :, 0]
+
+    return y_spikes_GT, y_spikes_hat, y_soma_GT, y_soma_hat
+
+def compute_test_predictions_entire(
+    neuron,
+    X_test,
+    y_spike_test,
+    y_soma_test,
+    burn_in_time: int = 0,
+    input_window_size: int = 500,
+    rest_start: bool = False,
+    recover_points= None,
+    v_threshold: float = DEFAULT_Y_SOMA_THRESHOLD,
+    y_train_soma_bias: float = DEFAULT_Y_TRAIN_SOMA_BIAS,
+    y_train_soma_scale: float = DEFAULT_Y_TRAIN_SOMA_SCALE,
+    ignore_synapse_types: bool = False,
+    device="cpu",
+):
+    synapse_types = torch.tensor(create_neuronio_input_type()).to(device)
+    if ignore_synapse_types:
+        synapse_types = torch.abs(synapse_types).to(device)
+    y_soma_test[y_soma_test > v_threshold] = v_threshold
+
+    X_test = np.transpose(X_test, axes=[2, 1, 0])
+    y1_test = y_spike_test.T[:, :, np.newaxis]
+    y2_test = (
+        y_soma_test.T[:, :, np.newaxis] - y_train_soma_bias
+    )  # do not apply scale for evaluation
+
+    y1_test_hat = np.zeros(y1_test.shape)
+    y2_test_hat = np.zeros(y2_test.shape)
+
+    with torch.no_grad():
+        for i in range(8):
+            X = X_test[i*16: i*16+16]
+            spike_input = (
+                torch.from_numpy(X).float().to(device) * synapse_types
+            )
+            outputs = neuron.neuronio_eval_forward(spike_input).cpu().numpy()
+            y1_test_hat[i*16: i*16+16] = outputs[..., 0:1]
+            y2_test_hat[i*16: i*16+16] = outputs[..., 1:2]
 
     # NOTE: the following should probably not be done, however,
     # for comparability to previous methods, we leave it in,
