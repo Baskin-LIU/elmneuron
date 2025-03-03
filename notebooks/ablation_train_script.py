@@ -21,6 +21,7 @@ sys.path.insert(0, str(package_path))
 
 from src.expressive_leaky_memory_neuron_v2 import ELM
 from src.expressive_leaky_memory_neuron_norecurrent import ELMnr
+from src.expressive_leaky_memory_neuron_tanh import ELMt
 from src.neuronio.neuronio_data_loader import NeuronIO
 from src.neuronio.neuronio_data_utils import (
     NEURONIO_DATA_DIM,
@@ -42,6 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--short_run", dest="short_run", action="store_true")
     parser.add_argument("--freeze_mlp", dest="freeze_mlp", action="store_true")
     parser.add_argument("--no_recurrent", dest="no_recurrent", action="store_true")
+    parser.add_argument("--activation", dest="activation", action="store_true")
     
     parser.add_argument("--num_memory", type=int, default=10)
     parser.add_argument("--mlp_hidden_size", type=int, default=-1)
@@ -53,7 +55,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--machine", type=str, default="MLcloud")
 
-    parser.set_defaults(short_run=False, rest_start=False, freeze_mlp=False, no_recurrent=False)
+    parser.set_defaults(short_run=False, rest_start=False, freeze_mlp=False, no_recurrent=False, activation=False)
     
     args = parser.parse_args()
 
@@ -71,7 +73,7 @@ if __name__ == "__main__":
     # wandb config
     api_key_file = Path("~/.wandbAPIkey.txt").expanduser().resolve()
     project_name = "ELM_ablation"
-    group_name = "freeze_mlp_%r_recurrent_%r"%(args.freeze_mlp, not args.no_recurrent)
+    group_name = "freeze_mlp_%r_recurrent_%r_activation_%r"%(args.freeze_mlp, not args.no_recurrent, args.activation)
 
     # login to wandb
     with open(api_key_file, "r") as file:
@@ -167,6 +169,7 @@ if __name__ == "__main__":
     train_config = dict()
     train_config['freeze_mlp'] = args.freeze_mlp
     train_config['no_recurrent'] = args.no_recurrent
+    train_config['activation'] = args.activation
     train_config["num_epochs"] = 5 if general_config["short_training_run"] else 35
     train_config["learning_rate"] = 5e-4
     train_config["batch_size"] = 8 if general_config["short_training_run"] else 8
@@ -246,6 +249,8 @@ if __name__ == "__main__":
     # Initialize the ELM model
     if args.no_recurrent:
         model = ELMnr(**model_config).to(torch_device)
+    elif args.activation:
+        model = ELMt(**model_config).to(torch_device)
     else:
         model = ELM(**model_config).to(torch_device)
 
