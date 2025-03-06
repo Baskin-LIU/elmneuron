@@ -17,9 +17,13 @@ from .neuronio.neuronio_data_utils import DEFAULT_Y_TRAIN_SOMA_SCALE
 
 PREPROCESS_CONFIGURATIONS = [None, "random_routing", "neuronio_routing"]
 
-def custom_fast_sigmoid(x, scale = 2.):
-    x_ = scale * x
+def custom_fast_sigmoid(x):
+    x_ = 2. * x
     return x_/(1+torch.abs(x_)) * 1.7159
+
+def custom_fast_tanh(x):
+    x_ = torch.clamp(0.7 * x, -1., 1.)
+    return 2*x_/(1+(x_)^2) * 1.7159
 
 
 class ELMt(jit.ScriptModule):
@@ -187,7 +191,7 @@ class ELMt(jit.ScriptModule):
         batch_size, _ = x.shape
         b_inp = (w_s * x).view(batch_size, self.num_branch, -1).sum(dim=-1)
         b_t = kappa_b * b_prev + b_inp
-        delta_m_t = custom_fast_sigmoid(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
+        delta_m_t = custom_fast_tanh(self.mlp(torch.cat([b_t, kappa_m * m_prev], dim=-1)))
         m_t = kappa_m * m_prev + (1 - kappa_lambda) * delta_m_t
         y_t = self.w_y(m_t)
         return y_t, b_t, m_t
