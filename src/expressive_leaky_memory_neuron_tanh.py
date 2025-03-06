@@ -23,7 +23,7 @@ def custom_fast_sigmoid(x):
 
 def custom_fast_tanh(x):
     x_ = torch.clamp(0.7 * x, -1., 1.)
-    return 2*x_/(1+(x_)^2) * 1.7159
+    return 2*x_/(1+x_**2) * 1.7159
 
 
 class ELMt(jit.ScriptModule):
